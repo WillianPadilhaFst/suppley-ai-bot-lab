@@ -51,7 +51,11 @@ rfqInboundRouter.post("/api/rfq/inbound", async (req: Request, res: Response) =>
     // Tenta casar o outreach original pelo email do remetente (fecha o rastreio).
     let outreachId: number | undefined;
     if (from) {
-      const fromEmail = from.match(/<([^>]+)>/)?.[1] ?? from;
+      const lt = from.indexOf("<");
+      const gt = lt >= 0 ? from.indexOf(">", lt + 1) : -1;
+      const fromEmail = lt >= 0 && gt > lt + 1
+        ? from.slice(lt + 1, gt).trim()
+        : from;
       const [o] = await db.select().from(supplierOutreach)
         .where(and(eq(supplierOutreach.rfqId, rfq.id), eq(supplierOutreach.recipientEmail, fromEmail)))
         .limit(1);
