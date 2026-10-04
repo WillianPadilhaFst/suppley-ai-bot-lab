@@ -12,6 +12,27 @@ permissions:
 jobs:
   repair:
     runs-on: ubuntu-latest
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: mysql://root:root@localhost:3306/suppley_calc_test
+      JWT_SECRET: 0123456789abcdef0123456789abcdef
+      ANTHROPIC_API_KEY: dummy-for-ci
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: suppley_calc_test
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+        ports:
+          - 3306:3306
+
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +54,9 @@ jobs:
       - name: Re-sync lockfile
         run: pnpm install --lockfile-only
 
+      - name: Prepare test database
+        run: pnpm exec drizzle-kit push --force
+
       - name: Type check
         run: pnpm check
 
@@ -43,9 +67,6 @@ jobs:
         run: pnpm build
         env:
           NODE_ENV: production
-          DATABASE_URL: mysql://root:root@127.0.0.1:3306/suppley_calc_test
-          JWT_SECRET: 0123456789abcdef0123456789abcdef
-          ANTHROPIC_API_KEY: dummy-for-ci
           VITE_APP_ID: test-app
           VITE_OAUTH_PORTAL_URL: ""
 
