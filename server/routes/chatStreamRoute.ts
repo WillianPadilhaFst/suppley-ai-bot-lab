@@ -7,8 +7,10 @@ import { enrichOperacaoFromChat } from "../services/gapEnrichmentService";
 import { applyAttachmentToMessages, attachmentMarker, type AttachmentRef } from "../services/attachmentBlock";
 import type { Message } from "../_core/llm";
 import { getJwtSecret } from "../_core/jwtSecret";
+import { createRateLimit } from "../_core/rateLimit";
 
 const router = Router();
+const chatStreamRateLimit = createRateLimit({ windowMs: 60_000, max: 30 });
 const SESSION_COOKIE = "suppley_session";
 
 interface StreamPayload {
@@ -39,19 +41,13 @@ function readSessionCookie(req: Request): string | null {
   return null;
 }
 
-/** Resolve o usuário do request: Authorization Bearer (fallback) ou cookie de sessão. */
+/** Resolve uma única credencial por request, preferindo o cookie HttpOnly. */
 async function resolveUserId(req: Request): Promise<number | null> {
-  const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith("Bearer ")) {
-    const userId = await verifySessionToken(authHeader.slice(7));
-    if (userId) return userId;
-  }
   const cookieToken = readSessionCookie(req);
-  if (cookieToken) {
-    const userId = await verifySessionToken(cookieToken);
-    if (userId) return userId;
-  }
-  return null;
+  const authHeader = req.headers.authorization;
+  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  const token = cookieToken ?? bearerToken;
+  return token ? verifySessionToken(token) : null;
 }
 
 /**
@@ -81,7 +77,7 @@ function diagnoseError(err: unknown): string {
   return "Tive um problema técnico ao processar agora. Tente de novo em instantes — se persistir, me diga de outro jeito que eu sigo daqui.";
 }
 
-router.post("/api/chat/stream", async (req: Request, res: Response) => {
+router.post("/api/chat/stream", chatStreamRateLimit, async (req: Request, res: Response) => {
   try {
     const userId = await resolveUserId(req);
     if (!userId) {
