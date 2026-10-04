@@ -6,13 +6,11 @@ import { runExcambiaStream } from "../agent/orchestrator";
 import { enrichOperacaoFromChat } from "../services/gapEnrichmentService";
 import { applyAttachmentToMessages, attachmentMarker, type AttachmentRef } from "../services/attachmentBlock";
 import type { Message } from "../_core/llm";
+import { getJwtSecret } from "../_core/jwtSecret";
+import { createRateLimit } from "../_core/rateLimit";
 
 const router = Router();
-
-// Mesmo secret e cookie do context.ts (autenticação tRPC) — manter sincronizado.
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "suppley-calc-secret-key-2024"
-);
+const chatStreamRateLimit = createRateLimit({ windowMs: 60_000, max: 30 });
 const SESSION_COOKIE = "suppley_session";
 
 interface StreamPayload {
@@ -25,7 +23,7 @@ interface StreamPayload {
 
 async function verifySessionToken(token: string): Promise<number | null> {
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, getJwtSecret());
     return (payload.userId as number) ?? null;
   } catch {
     return null;
@@ -43,19 +41,16 @@ function readSessionCookie(req: Request): string | null {
   return null;
 }
 
-/** Resolve o usuário do request: Authorization Bearer (fallback) ou cookie de sessão. */
+/**
+ * O stream aceita somente o cookie HttpOnly da sessão.
+ * Evita ambiguidade entre duas credenciais controláveis pelo request e mantém
+ * a rota alinhada ao fetch same-origin usado pelo cliente.
+ */
 async function resolveUserId(req: Request): Promise<number | null> {
-  const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith("Bearer ")) {
-    const userId = await verifySessionToken(authHeader.slice(7));
-    if (userId) return userId;
-  }
-  const cookieToken = readSessionCookie(req);
-  if (cookieToken) {
-    const userId = await verifySessionToken(cookieToken);
-    if (userId) return userId;
-  }
-  return null;
+  // Sempre executa a verificação criptográfica. Cookie ausente vira string vazia,
+  // que jwtVerify rejeita e converte para null dentro de verifySessionToken.
+  // Assim não existe um ramo controlado pelo request que pule o security check.
+  return verifySessionToken(readSessionCookie(req) ?? "");
 }
 
 /**
@@ -85,7 +80,7 @@ function diagnoseError(err: unknown): string {
   return "Tive um problema técnico ao processar agora. Tente de novo em instantes — se persistir, me diga de outro jeito que eu sigo daqui.";
 }
 
-router.post("/api/chat/stream", async (req: Request, res: Response) => {
+router.post("/api/chat/stream", chatStreamRateLimit, async (req: Request, res: Response) => {
   try {
     const userId = await resolveUserId(req);
     if (!userId) {
@@ -130,6 +125,7 @@ router.post("/api/chat/stream", async (req: Request, res: Response) => {
     const agentMessages = await applyAttachmentToMessages(
       payload.messages as Message[],
       payload.attachment,
+      user.id,
     );
 
     // Enriquecimento automático — FORA do caminho crítico: rodava ANTES do
