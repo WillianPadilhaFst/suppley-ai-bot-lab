@@ -1,6 +1,9 @@
 import express, { type Express } from "express";
 import fs from "fs";
 import path from "path";
+import { createRateLimit } from "./rateLimit";
+
+const spaFallbackRateLimit = createRateLimit({ windowMs: 60_000, max: 300 });
 
 /**
  * Servidor de arquivos estáticos de PRODUÇÃO.
@@ -35,7 +38,7 @@ export function serveStatic(app: Express) {
   );
 
   // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
+  app.use("*", spaFallbackRateLimit, (_req, res) => {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.sendFile(path.resolve(distPath, "index.html"));
   });
