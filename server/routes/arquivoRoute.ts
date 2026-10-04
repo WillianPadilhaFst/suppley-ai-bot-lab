@@ -21,8 +21,10 @@ import { SignJWT, jwtVerify } from "jose";
 import { storageGet } from "../storage";
 import { ENV } from "../_core/env";
 import { getJwtSecret } from "../_core/jwtSecret";
+import { createRateLimit } from "../_core/rateLimit";
 
 const router = Router();
+const arquivoRateLimit = createRateLimit({ windowMs: 60_000, max: 60 });
 
 /** Assinatura curta do S3: o redirect é usado na hora, não precisa durar. */
 const TTL_ASSINATURA_S3 = 300;
@@ -60,7 +62,7 @@ export async function linkEstavelDeArquivo(dados: TokenArquivo): Promise<string>
   return `${ENV.appUrl}/api/arquivo/${token}`;
 }
 
-router.get("/api/arquivo/:token", async (req: Request, res: Response) => {
+router.get("/api/arquivo/:token", arquivoRateLimit, async (req: Request, res: Response) => {
   try {
     const { payload } = await jwtVerify(req.params.token, getJwtSecret());
     const chave = typeof payload.k === "string" ? payload.k : "";
