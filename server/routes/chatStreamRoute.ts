@@ -41,12 +41,13 @@ function readSessionCookie(req: Request): string | null {
   return null;
 }
 
-/** Resolve uma única credencial por request, preferindo o cookie HttpOnly. */
+/**
+ * O stream aceita somente o cookie HttpOnly da sessão.
+ * Evita ambiguidade entre duas credenciais controláveis pelo request e mantém
+ * a rota alinhada ao fetch same-origin usado pelo cliente.
+ */
 async function resolveUserId(req: Request): Promise<number | null> {
-  const cookieToken = readSessionCookie(req);
-  const authHeader = req.headers.authorization;
-  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  const token = cookieToken ?? bearerToken;
+  const token = readSessionCookie(req);
   return token ? verifySessionToken(token) : null;
 }
 
