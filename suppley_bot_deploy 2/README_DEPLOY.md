@@ -36,7 +36,7 @@ Faça upload destes arquivos para o repositório:
 No Railway, vá em "Variables" e adicione:
 
 ```
-TELEGRAM_TOKEN=8336628777:AAHNjR3uuQ-iB-Q1brgF_hM7to1bj9xcoxk
+TELEGRAM_TOKEN=seu_token_do_bot_aqui
 OPENAI_API_KEY=sua_chave_aqui
 ```
 
