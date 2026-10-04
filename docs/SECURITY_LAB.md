@@ -67,3 +67,8 @@ Nenhuma correção deve ser levada ao repositório original antes de:
 2. CodeQL executar;
 3. findings remanescentes serem triados;
 4. PR do lab ser revisado.
+
+
+## GitHub Actions
+
+Workflows habilitados manualmente no fork em 2026-10-04. Este commit serve também para disparar a primeira execução de validação do lab.
