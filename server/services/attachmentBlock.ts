@@ -51,8 +51,10 @@ function validateAttachmentKey(fileKey: string | undefined, userId: number): str
 function normalizeStorageKey(fileKey: string | undefined): string {
   if (!fileKey) throw new Error("Attachment fileKey ausente");
 
-  const key = fileKey.replace(/^\\/+/, "");
-  if (!key || key.includes("..") || key.includes("\\\\")) {
+  let key = fileKey;
+  while (key.startsWith("/")) key = key.slice(1);
+
+  if (!key || key.includes("..") || key.includes("\\")) {
     throw new Error("Attachment fileKey inválida");
   }
   return key;
