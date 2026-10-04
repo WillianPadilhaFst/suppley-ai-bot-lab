@@ -2,9 +2,9 @@ name: Test & Build
 
 on:
   push:
-    branches: [main, development, claude/manus-migration-independent-*]
+    branches: [main, development, claude/manus-migration-independent-*, security/**]
   pull_request:
-    branches: [main, development]
+    branches: [main, development, claude/manus-migration-independent-*, security/**]
 
 jobs:
   test-and-build:
@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Para análise completa
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v2
         with:
@@ -48,8 +48,8 @@ jobs:
       - name: Type check
         run: pnpm check
 
-      - name: Run tests (if any)
-        run: pnpm test --run 2>/dev/null || echo "No tests found"
+      - name: Run tests
+        run: pnpm test --run
 
       - name: Build
         run: pnpm build
@@ -63,7 +63,7 @@ jobs:
 
       - name: Upload build artifact
         if: success()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: build-${{ github.sha }}
           path: dist/
