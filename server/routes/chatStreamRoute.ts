@@ -130,6 +130,7 @@ router.post("/api/chat/stream", async (req: Request, res: Response) => {
     const agentMessages = await applyAttachmentToMessages(
       payload.messages as Message[],
       payload.attachment,
+      user.id,
     );
 
     // Enriquecimento automático — FORA do caminho crítico: rodava ANTES do
