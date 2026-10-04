@@ -15,7 +15,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x]
+        node-version: [22.x]
 
     env:
       NODE_ENV: test
@@ -54,6 +54,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Prepare test database
+        run: pnpm exec drizzle-kit push --force
 
       - name: Type check
         run: pnpm check
