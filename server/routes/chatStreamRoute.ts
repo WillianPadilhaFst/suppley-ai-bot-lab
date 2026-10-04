@@ -6,13 +6,9 @@ import { runExcambiaStream } from "../agent/orchestrator";
 import { enrichOperacaoFromChat } from "../services/gapEnrichmentService";
 import { applyAttachmentToMessages, attachmentMarker, type AttachmentRef } from "../services/attachmentBlock";
 import type { Message } from "../_core/llm";
+import { getJwtSecret } from "../_core/jwtSecret";
 
 const router = Router();
-
-// Mesmo secret e cookie do context.ts (autenticação tRPC) — manter sincronizado.
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "suppley-calc-secret-key-2024"
-);
 const SESSION_COOKIE = "suppley_session";
 
 interface StreamPayload {
@@ -25,7 +21,7 @@ interface StreamPayload {
 
 async function verifySessionToken(token: string): Promise<number | null> {
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, getJwtSecret());
     return (payload.userId as number) ?? null;
   } catch {
     return null;
