@@ -22,7 +22,7 @@ export function createRateLimit(options: RateLimitOptions): RequestHandler {
 
   return (req, res, next) => {
     const now = Date.now();
-    const key = options.key?.(req) ?? req.ip ?? req.socket.remoteAddress ?? "unknown";
+    const key = options.key?.(req) ?? req.ip ?? req.socket?.remoteAddress ?? "unknown";
 
     requestsSinceCleanup += 1;
     if (requestsSinceCleanup >= 500 || buckets.size > 10_000) {
