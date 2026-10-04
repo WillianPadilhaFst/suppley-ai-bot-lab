@@ -20,10 +20,12 @@ import { and, eq, like } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { rfqs, supplierOutreach } from "../../drizzle/rfqSchema";
 import { registrarRespostaFornecedor } from "../services/rfqOutreachService";
+import { createRateLimit } from "../_core/rateLimit";
 
 export const rfqInboundRouter = Router();
+const rfqInboundRateLimit = createRateLimit({ windowMs: 60_000, max: 120 });
 
-rfqInboundRouter.post("/api/rfq/inbound", async (req: Request, res: Response) => {
+rfqInboundRouter.post("/api/rfq/inbound", rfqInboundRateLimit, async (req: Request, res: Response) => {
   const token = process.env.RFQ_INBOUND_TOKEN;
   if (!token) return res.status(404).json({ error: "inbound desabilitado" });
   const auth = req.headers.authorization ?? "";
