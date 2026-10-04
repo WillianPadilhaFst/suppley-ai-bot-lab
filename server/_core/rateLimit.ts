@@ -27,9 +27,9 @@ export function createRateLimit(options: RateLimitOptions): RequestHandler {
     requestsSinceCleanup += 1;
     if (requestsSinceCleanup >= 500 || buckets.size > 10_000) {
       requestsSinceCleanup = 0;
-      for (const [bucketKey, bucket] of buckets) {
+      buckets.forEach((bucket, bucketKey) => {
         if (bucket.resetAt <= now) buckets.delete(bucketKey);
-      }
+      });
     }
 
     const current = buckets.get(key);
