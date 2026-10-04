@@ -38,7 +38,8 @@ async function chamarRota(token: string) {
     send(b: string) { this.corpo = b; return this; },
     redirect(c: number, url: string) { this.statusCode = c; this.destino = url; return this; },
   };
-  await camada.route.stack[0].handle({ params: { token }, ip: "127.0.0.1", socket: { remoteAddress: "127.0.0.1" } }, res, () => {});
+  const handler = camada.route.stack[camada.route.stack.length - 1]?.handle;
+  await handler({ params: { token }, ip: "127.0.0.1", socket: { remoteAddress: "127.0.0.1" } }, res, () => {});
   return res;
 }
 
