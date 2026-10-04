@@ -47,8 +47,10 @@ function readSessionCookie(req: Request): string | null {
  * a rota alinhada ao fetch same-origin usado pelo cliente.
  */
 async function resolveUserId(req: Request): Promise<number | null> {
-  const token = readSessionCookie(req);
-  return token ? verifySessionToken(token) : null;
+  // Sempre executa a verificação criptográfica. Cookie ausente vira string vazia,
+  // que jwtVerify rejeita e converte para null dentro de verifySessionToken.
+  // Assim não existe um ramo controlado pelo request que pule o security check.
+  return verifySessionToken(readSessionCookie(req) ?? "");
 }
 
 /**
