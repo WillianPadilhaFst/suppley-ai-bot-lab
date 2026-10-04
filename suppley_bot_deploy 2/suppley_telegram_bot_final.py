@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 agent = SupplyAIAgent()
 
 # Token do bot (via variável de ambiente)
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', '8336628777:AAHNjR3uuQ-iB-Q1brgF_hM7to1bj9xcoxk')
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 
 # Mensagem de boas-vindas personalizada
 WELCOME_MESSAGE = """🤖 *Suppley AI Assistant*
@@ -457,7 +457,7 @@ def main():
     logger.info("🤖 Iniciando Suppley AI Telegram Bot...")
     
     # Verificar token
-    if not TELEGRAM_TOKEN or TELEGRAM_TOKEN == 'SEU_TOKEN_AQUI':
+    if not TELEGRAM_TOKEN:
         logger.error("❌ TELEGRAM_TOKEN não configurado!")
         return
     
