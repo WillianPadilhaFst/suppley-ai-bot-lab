@@ -38,22 +38,28 @@ const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
  * NUNCA é usada em fetch, evitando SSRF e acesso cruzado a objetos do bucket.
  */
 function validateAttachmentKey(fileKey: string | undefined, userId: number): string {
-  if (!fileKey) {
-    throw new Error("Attachment fileKey ausente");
-  }
-
-  const key = fileKey.replace(/^\/+/, "");
+  const key = normalizeStorageKey(fileKey);
   const expectedPrefix = `quotations/${userId}/`;
 
-  if (!key.startsWith(expectedPrefix) || key.includes("..") || key.includes("\\")) {
+  if (!key.startsWith(expectedPrefix)) {
     throw new Error("Attachment fileKey inválida para este usuário");
   }
 
   return key;
 }
 
-async function fetchStoredAttachment(att: AttachmentRef, userId: number): Promise<Response> {
-  const key = validateAttachmentKey(att.fileKey, userId);
+function normalizeStorageKey(fileKey: string | undefined): string {
+  if (!fileKey) throw new Error("Attachment fileKey ausente");
+
+  const key = fileKey.replace(/^\\/+/, "");
+  if (!key || key.includes("..") || key.includes("\\\\")) {
+    throw new Error("Attachment fileKey inválida");
+  }
+  return key;
+}
+
+async function fetchStoredAttachmentByKey(fileKey: string): Promise<Response> {
+  const key = normalizeStorageKey(fileKey);
   const { url } = await storageGet(key);
 
   // URL é gerada pelo servidor via AWS SDK. Redirecionamentos são recusados
@@ -95,9 +101,9 @@ export interface AttachmentRef {
   fileKey?: string;
 }
 
-export async function buildAttachmentBlock(att: AttachmentRef, userId: number): Promise<MessageContent | null> {
+async function buildAttachmentBlockFromStorageKey(att: AttachmentRef, fileKey: string): Promise<MessageContent | null> {
   try {
-    const resp = await fetchStoredAttachment(att, userId);
+    const resp = await fetchStoredAttachmentByKey(fileKey);
     const buffer = Buffer.from(await resp.arrayBuffer());
     if (buffer.byteLength > MAX_ATTACHMENT_BYTES) {
       throw new Error("Attachment excede o limite de leitura");
@@ -157,6 +163,29 @@ export async function buildAttachmentBlock(att: AttachmentRef, userId: number): 
     console.error("[attachmentBlock] falha ao ler anexo:", err);
     return null;
   }
+}
+
+/**
+ * Caminho para anexos recebidos do cliente: exige chave no namespace do usuário.
+ */
+export async function buildAttachmentBlock(att: AttachmentRef, userId: number): Promise<MessageContent | null> {
+  try {
+    const key = validateAttachmentKey(att.fileKey, userId);
+    return await buildAttachmentBlockFromStorageKey(att, key);
+  } catch (err) {
+    console.error("[attachmentBlock] anexo rejeitado:", err);
+    return null;
+  }
+}
+
+/**
+ * Caminho interno para chaves vindas do banco após checagem de posse.
+ * Não aceita URL externa; a chave é sempre re-assinada pelo backend.
+ */
+export async function buildStoredAttachmentBlock(
+  att: Omit<AttachmentRef, "url"> & { fileKey: string },
+): Promise<MessageContent | null> {
+  return buildAttachmentBlockFromStorageKey({ ...att, url: "" }, normalizeStorageKey(att.fileKey));
 }
 
 /**
