@@ -16,6 +16,7 @@ import { invokeLLM, MODELS, type Message } from "../_core/llm";
 import { getToolSchemas, runTool } from "./tools";
 import type { AnexoTurno, ToolContext } from "./tools/types";
 import { checkBudget } from "./guardrails";
+import { modelForTurn } from "./modelRouting";
 import { getLearningContext } from "../db";
 import * as operacaoService from "../services/operacaoService";
 
@@ -428,6 +429,7 @@ export async function runExcambia(input: OrchestratorInput): Promise<Orchestrato
   // Cadeia de pensamento nativa nas análises complexas (uma decisão por mensagem).
   const profundo = precisaRaciocinioProfundo(input.messages);
   const effort = profundo ? ("xhigh" as const) : ("high" as const);
+  const model = modelForTurn(input.messages, profundo);
 
   let turns = 0;
   let llmCalls = 0;
@@ -453,6 +455,7 @@ export async function runExcambia(input: OrchestratorInput): Promise<Orchestrato
       // Teto de saída alto: catalogar uma cotação grande gera argumentos de
       // tool com dezenas de itens — com o default (4096) o JSON era cortado.
       maxTokens: 16000,
+      model,
     });
 
     const choice = result.choices?.[0]?.message;
@@ -533,6 +536,7 @@ export async function* runExcambiaStream(input: OrchestratorInput): AsyncGenerat
   // Cadeia de pensamento nativa nas análises complexas (uma decisão por mensagem).
   const profundo = precisaRaciocinioProfundo(input.messages);
   const effort = profundo ? ("xhigh" as const) : ("high" as const);
+  const model = modelForTurn(input.messages, profundo);
 
   let turns = 0;
   let llmCalls = 0;
@@ -573,6 +577,7 @@ export async function* runExcambiaStream(input: OrchestratorInput): AsyncGenerat
       // Teto de saída alto: catalogar uma cotação grande gera argumentos de
       // tool com dezenas de itens — com o default (4096) o JSON era cortado.
       maxTokens: 16000,
+      model,
     });
 
     const choice = result.choices?.[0]?.message;
