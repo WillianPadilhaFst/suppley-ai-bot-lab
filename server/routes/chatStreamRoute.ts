@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { performance } from "node:perf_hooks";
 import { jwtVerify } from "jose";
 import * as conversaDb from "../db/conversaDb";
 import { getUserById } from "../services/authService";
@@ -86,6 +87,8 @@ function diagnoseError(err: unknown): string {
 }
 
 router.post("/api/chat/stream", async (req: Request, res: Response) => {
+  const perfStartedAt = performance.now();
+  let perfFirstEventAt: number | null = null;
   try {
     const userId = await resolveUserId(req);
     if (!userId) {
@@ -149,6 +152,7 @@ router.post("/api/chat/stream", async (req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders?.();
+    const perfHeadersAt = performance.now();
 
     let fullReply = "";
     let toolsUsed: string[] = [];
@@ -169,6 +173,7 @@ router.post("/api/chat/stream", async (req: Request, res: Response) => {
             }
           : undefined,
       })) {
+        if (perfFirstEventAt == null) perfFirstEventAt = performance.now();
         if (chunk.type === "reply") {
           fullReply = chunk.reply;
           toolsUsed = chunk.toolsUsed;
@@ -193,10 +198,25 @@ router.post("/api/chat/stream", async (req: Request, res: Response) => {
         toolResults,
       );
 
+      const perfFinishedAt = performance.now();
+      console.info("[perf:chat]", {
+        prepMs: Math.round(perfHeadersAt - perfStartedAt),
+        firstEventMs: perfFirstEventAt == null ? null : Math.round(perfFirstEventAt - perfStartedAt),
+        totalMs: Math.round(perfFinishedAt - perfStartedAt),
+        toolsUsed: toolsUsed.length,
+        hadAttachment: Boolean(payload.attachment),
+      });
+
       res.write('data: {"type":"done"}\n\n');
       res.end();
     } catch (err) {
       console.error("[chatStream] erro no stream:", err);
+      console.info("[perf:chat]", {
+        failed: true,
+        totalMs: Math.round(performance.now() - perfStartedAt),
+        firstEventMs: perfFirstEventAt == null ? null : Math.round(perfFirstEventAt - perfStartedAt),
+        hadAttachment: Boolean(payload.attachment),
+      });
       // Mesmo em erro, responde e PERSISTE — a conversa não pode ficar muda.
       // Diagnostica o tipo do erro para a mensagem ser ACIONÁVEL na própria tela.
       const fallback = diagnoseError(err);
