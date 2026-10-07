@@ -168,8 +168,8 @@ AWS Console > IAM > Policies > "Create policy"
 # .env (local development)
 AWS_S3_BUCKET=suppley-ai-uploads-dev
 AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF
-AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+AWS_ACCESS_KEY_ID=YOUR_AWS_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY=YOUR_AWS_SECRET_ACCESS_KEY
 ```
 
 ### 4.2 Adicionar ao `.env.production` (Produção)
