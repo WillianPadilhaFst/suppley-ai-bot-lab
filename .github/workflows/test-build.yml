@@ -2,7 +2,7 @@ name: Test & Build
 
 on:
   push:
-    branches: [main, development, claude/manus-migration-independent-*]
+    branches: [main, development, claude/manus-migration-independent-*, 'perf/**']
   pull_request:
     branches: [main, development]
 
