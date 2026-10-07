@@ -16,7 +16,7 @@ import { invokeLLM, MODELS, type Message } from "../_core/llm";
 import { getToolSchemas, runTool } from "./tools";
 import type { AnexoTurno, ToolContext } from "./tools/types";
 import { checkBudget } from "./guardrails";
-import { modelForTurn } from "./modelRouting";
+import { modelForTurn, needsNativeWebSearch } from "./modelRouting";
 import { getLearningContext } from "../db";
 import * as operacaoService from "../services/operacaoService";
 
@@ -395,17 +395,33 @@ async function compactarHistorico(messages: Message[]): Promise<Message[]> {
 // ---------------------------------------------------------------------------
 // RACIOCÍNIO PROFUNDO ADAPTATIVO — análises complexas ganham cadeia de
 // pensamento nativa (raciocínio entre tools); o dia a dia segue rápido e barato.
-// A profundidade é dada por `effort`: "xhigh" no trabalho analítico pesado
-// (dimensionamento de mercado, viabilidade, correlação) e "high" no restante.
+// A profundidade é dada por `effort`: "xhigh" somente no trabalho analítico
+// pesado. Pedidos operacionais comuns de cálculo/simulação usam a rota balanceada.
 // ---------------------------------------------------------------------------
 const PADRAO_COMPLEXO =
-  /viabilidade|vale a pena|analis|compar|estratég|cenário|proje[çt]|prev[eiê]|tend[êe]nci|risco|planejamento|reforma|diversific|melhor (origem|país|momento|fornecedor)|de onde (importar|comprar)|target|alvo|margem|simul|otimiz|estrutura[çr]|drawback|ex-?tarif|canal (cinza|vermelho)|demurrage|solve/i;
+  /viabilidade|vale a pena|compar|estratég|cenário|proje[çt]|prev[eiê]|tend[êe]nci|risco|planejamento|reforma|diversific|melhor (origem|país|momento|fornecedor)|de onde (importar|comprar)|target|alvo|margem|otimiz|estrutura[çr]|drawback|ex-?tarif|canal (cinza|vermelho)|demurrage|solve/i;
 
 function precisaRaciocinioProfundo(messages: Message[]): boolean {
   const ultima = [...messages].reverse().find((m) => m.role === "user");
   if (!ultima) return false;
   const texto = typeof ultima.content === "string" ? ultima.content : JSON.stringify(ultima.content);
   return texto.length > 600 || PADRAO_COMPLEXO.test(texto);
+}
+
+function stableToolArgs(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableToolArgs);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => [k, stableToolArgs(v)]),
+    );
+  }
+  return value;
+}
+
+function toolCallCacheKey(name: string, args: Record<string, unknown>): string {
+  return `${name}:${JSON.stringify(stableToolArgs(args))}`;
 }
 
 export async function runExcambia(input: OrchestratorInput): Promise<OrchestratorOutput> {
@@ -419,6 +435,7 @@ export async function runExcambia(input: OrchestratorInput): Promise<Orchestrato
   const toolSchemas = getToolSchemas(input.estagio);
   const toolsUsed: string[] = [];
   const toolResults: OrchestratorOutput["toolResults"] = [];
+  const toolCallCache = new Map<string, Awaited<ReturnType<typeof runTool>>>();
 
   // monta a conversa com o system prompt da Excambia (histórico compactado se longo)
   const conversation: Message[] = [
@@ -428,8 +445,9 @@ export async function runExcambia(input: OrchestratorInput): Promise<Orchestrato
 
   // Cadeia de pensamento nativa nas análises complexas (uma decisão por mensagem).
   const profundo = precisaRaciocinioProfundo(input.messages);
-  const effort = profundo ? ("xhigh" as const) : ("high" as const);
+  const effort = profundo ? ("xhigh" as const) : ("medium" as const);
   const model = modelForTurn(input.messages, profundo);
+  const webSearchRequested = needsNativeWebSearch(input.messages);
 
   let turns = 0;
   let llmCalls = 0;
@@ -448,8 +466,8 @@ export async function runExcambia(input: OrchestratorInput): Promise<Orchestrato
       messages: conversation,
       tools: toolSchemas.length > 0 ? toolSchemas : undefined,
       tool_choice: toolSchemas.length > 0 ? "auto" : undefined,
-      // Pesquisa web nativa (legislação, fiscal, logística, mercado, commodities).
-      webSearch: true,
+      // Pesquisa web nativa só quando o pedido realmente exige conteúdo externo atual.
+      webSearch: webSearchRequested && toolsUsed.length === 0,
       thinking: profundo,
       effort,
       // Teto de saída alto: catalogar uma cotação grande gera argumentos de
@@ -489,9 +507,14 @@ export async function runExcambia(input: OrchestratorInput): Promise<Orchestrato
         args = {};
       }
 
-      const toolResult = await runTool(name, args, ctx);
-      toolsUsed.push(name);
-      toolResults.push({ name, ok: toolResult.ok, data: toolResult.data });
+      const cacheKey = toolCallCacheKey(name, args);
+      let toolResult = toolCallCache.get(cacheKey);
+      if (!toolResult) {
+        toolResult = await runTool(name, args, ctx);
+        toolCallCache.set(cacheKey, toolResult);
+        toolsUsed.push(name);
+        toolResults.push({ name, ok: toolResult.ok, data: toolResult.data });
+      }
 
       // devolve o resultado da tool como mensagem 'tool'
       conversation.push({
@@ -527,6 +550,7 @@ export async function* runExcambiaStream(input: OrchestratorInput): AsyncGenerat
   const toolSchemas = getToolSchemas(input.estagio);
   const toolsUsed: string[] = [];
   const toolResults: OrchestratorOutput["toolResults"] = [];
+  const toolCallCache = new Map<string, Awaited<ReturnType<typeof runTool>>>();
 
   const conversation: Message[] = [
     { role: "system", content: await buildSystemContent(input.userId, input.operacaoId) },
@@ -535,8 +559,9 @@ export async function* runExcambiaStream(input: OrchestratorInput): AsyncGenerat
 
   // Cadeia de pensamento nativa nas análises complexas (uma decisão por mensagem).
   const profundo = precisaRaciocinioProfundo(input.messages);
-  const effort = profundo ? ("xhigh" as const) : ("high" as const);
+  const effort = profundo ? ("xhigh" as const) : ("medium" as const);
   const model = modelForTurn(input.messages, profundo);
+  const webSearchRequested = needsNativeWebSearch(input.messages);
 
   let turns = 0;
   let llmCalls = 0;
@@ -570,8 +595,8 @@ export async function* runExcambiaStream(input: OrchestratorInput): AsyncGenerat
       messages: conversation,
       tools: toolSchemas.length > 0 ? toolSchemas : undefined,
       tool_choice: toolSchemas.length > 0 ? "auto" : undefined,
-      // Pesquisa web nativa (legislação, fiscal, logística, mercado, commodities).
-      webSearch: true,
+      // Pesquisa web nativa só quando o pedido realmente exige conteúdo externo atual.
+      webSearch: webSearchRequested && toolsUsed.length === 0,
       thinking: profundo,
       effort,
       // Teto de saída alto: catalogar uma cotação grande gera argumentos de
@@ -613,18 +638,23 @@ export async function* runExcambiaStream(input: OrchestratorInput): AsyncGenerat
         args = {};
       }
 
-      yield { type: "tool_call", name, args };
+      const cacheKey = toolCallCacheKey(name, args);
+      let toolResult = toolCallCache.get(cacheKey);
 
-      const toolResult = await runTool(name, args, ctx);
-      toolsUsed.push(name);
-      toolResults.push({ name, ok: toolResult.ok, data: toolResult.data });
+      if (!toolResult) {
+        yield { type: "tool_call", name, args };
+        toolResult = await runTool(name, args, ctx);
+        toolCallCache.set(cacheKey, toolResult);
+        toolsUsed.push(name);
+        toolResults.push({ name, ok: toolResult.ok, data: toolResult.data });
 
-      yield {
-        type: "tool_result",
-        name,
-        ok: toolResult.ok,
-        summary: toolResult.summary,
-      };
+        yield {
+          type: "tool_result",
+          name,
+          ok: toolResult.ok,
+          summary: toolResult.summary,
+        };
+      }
 
       conversation.push({
         role: "tool",
