@@ -1,21 +1,17 @@
-name: Test & Build
+name: Dependency Repair (one-time)
 
 on:
   push:
-    branches: [main, development, claude/manus-migration-independent-*, security/**]
-  pull_request:
-    branches: [main, development, claude/manus-migration-independent-*, security/**]
+    branches: ["security/codeql-fixes"]
+    paths:
+      - ".github/workflows/dependency-repair.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  test-and-build:
+  repair:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [22.x]
 
     env:
       NODE_ENV: test
@@ -39,9 +35,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
 
       - uses: pnpm/action-setup@v4
         with:
@@ -49,11 +42,17 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'pnpm'
+          node-version: 22.x
+          cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Apply audit fixes
+        run: pnpm audit --fix
+
+      - name: Re-sync lockfile
+        run: pnpm install --lockfile-only
 
       - name: Prepare test database
         run: pnpm exec drizzle-kit push --force
@@ -67,20 +66,19 @@ jobs:
       - name: Build
         run: pnpm build
         env:
+          NODE_ENV: production
           VITE_APP_ID: test-app
           VITE_OAUTH_PORTAL_URL: ""
-          NODE_ENV: production
 
-      - name: Upload build artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-${{ github.sha }}
-          path: dist/
-          retention-days: 5
-
-      - name: Record failure in job summary
-        if: failure()
+      - name: Commit repaired dependency files
+        shell: bash
         run: |
-          echo "## ❌ Test & Build falhou" >> "$GITHUB_STEP_SUMMARY"
-          echo "Consulte os logs desta execução para identificar o passo que falhou." >> "$GITHUB_STEP_SUMMARY"
+          if git diff --quiet -- package.json pnpm-lock.yaml; then
+            echo "No dependency file changes were generated."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json pnpm-lock.yaml
+          git commit -m "security: apply dependency audit fixes"
+          git push origin HEAD:security/codeql-fixes
