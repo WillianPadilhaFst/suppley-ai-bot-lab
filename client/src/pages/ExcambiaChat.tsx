@@ -274,6 +274,13 @@ export default function ExcambiaChat() {
         throw new Error(`Stream failed: ${response.statusText}`);
       }
 
+      // O backend persiste a mensagem do usuário antes de abrir o SSE. Assim que
+      // os headers chegam, sincronizamos a conversa e retiramos a cópia otimista
+      // para evitar duas bolhas iguais em refetch/foco da janela.
+      void utils.conversas.get.invalidate({ id }).then(() => {
+        setOptimistic((prev) => prev.filter((o) => o.id !== optId));
+      });
+
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -405,6 +412,13 @@ export default function ExcambiaChat() {
       if (!response.ok) {
         throw new Error(`Stream failed: ${response.statusText}`);
       }
+
+      // O backend persiste a mensagem do usuário antes de abrir o SSE. Assim que
+      // os headers chegam, sincronizamos a conversa e retiramos a cópia otimista
+      // para evitar duas bolhas iguais em refetch/foco da janela.
+      void utils.conversas.get.invalidate({ id }).then(() => {
+        setOptimistic((prev) => prev.filter((o) => o.id !== optId));
+      });
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
@@ -729,14 +743,31 @@ const labelFor = (name?: string) =>
  */
 function StreamingActivity({ events }: { events: any[] }) {
   // Deriva os passos a partir dos tool_call/tool_result (ignora "thinking" cru).
-  const steps: Array<{ label: string; done: boolean; ok: boolean }> = [];
+  // Se uma mesma ferramenta precisar rodar novamente com dados atualizados,
+  // não mostramos duas linhas idênticas: a segunda fica semanticamente clara.
+  const steps: Array<{ label: string; done: boolean; ok: boolean; name?: string }> = [];
+  const callCount = new Map<string, number>();
   for (const e of events) {
     if (e.type === "tool_call") {
-      steps.push({ label: labelFor(e.name), done: false, ok: true });
+      const name = String(e.name ?? "");
+      const count = (callCount.get(name) ?? 0) + 1;
+      callCount.set(name, count);
+      const base = labelFor(name);
+      const label =
+        count === 1
+          ? base
+          : name === "montar_calculo"
+            ? "Recalculando com os dados atualizados"
+            : `Atualizando: ${base}`;
+      steps.push({ label, done: false, ok: true, name });
     } else if (e.type === "tool_result") {
-      // marca o último passo aberto como concluído
+      // marca o último passo aberto da mesma ferramenta como concluído
       for (let i = steps.length - 1; i >= 0; i--) {
-        if (!steps[i].done) { steps[i].done = true; steps[i].ok = e.ok !== false; break; }
+        if (!steps[i].done && (!e.name || steps[i].name === e.name)) {
+          steps[i].done = true;
+          steps[i].ok = e.ok !== false;
+          break;
+        }
       }
     }
   }
@@ -767,7 +798,7 @@ function StreamingActivity({ events }: { events: any[] }) {
             {!current && (
               <li className="flex items-center gap-2 text-[13px] text-(--ink-2)">
                 <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-violet-400" />
-                <span>Redigindo a resposta<span className="excambia-ellipsis" /></span>
+                <span>Finalizando a análise<span className="excambia-ellipsis" /></span>
               </li>
             )}
           </ul>
