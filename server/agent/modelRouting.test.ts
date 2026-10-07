@@ -3,6 +3,7 @@ import { MODELS, type Message } from "../_core/llm";
 import { isQuickConversationalTurn, modelForTurn } from "./modelRouting";
 
 const user = (content: string): Message => ({ role: "user", content });
+const assistant = (content: string): Message => ({ role: "assistant", content });
 
 describe("modelRouting", () => {
   it.each([
@@ -13,7 +14,7 @@ describe("modelRouting", () => {
     "continua",
     "opa deu boa",
     "valeu!",
-  ])("usa rota rápida para confirmação curta: %s", (text) => {
+  ])("usa rota rápida para confirmação curta sem contexto crítico: %s", (text) => {
     expect(isQuickConversationalTurn([user(text)])).toBe(true);
     expect(modelForTurn([user(text)], false)).toBe(MODELS.balanced);
   });
@@ -27,5 +28,22 @@ describe("modelRouting", () => {
   it("mantém modelo smart quando o turno exige raciocínio profundo", () => {
     const messages = [user("sim")];
     expect(modelForTurn(messages, true)).toBe(MODELS.smart);
+  });
+
+  it.each([
+    "Posso enviar a cotação para o fornecedor?",
+    "Confirma o pagamento e posso prosseguir?",
+    "Quer que eu cancele este pedido?",
+    "Posso disparar a RFQ agora?",
+  ])("mantém modelo smart para confirmação operacional: %s", (previous) => {
+    const messages = [assistant(previous), user("sim")];
+    expect(isQuickConversationalTurn(messages)).toBe(false);
+    expect(modelForTurn(messages, false)).toBe(MODELS.smart);
+  });
+
+  it("mantém rota rápida para confirmação puramente conversacional", () => {
+    const messages = [assistant("Entendi. Posso continuar explicando esse ponto?"), user("pode continuar")];
+    expect(isQuickConversationalTurn(messages)).toBe(true);
+    expect(modelForTurn(messages, false)).toBe(MODELS.balanced);
   });
 });
