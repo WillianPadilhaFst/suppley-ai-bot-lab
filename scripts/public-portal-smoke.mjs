@@ -53,7 +53,7 @@ try {
   await page.screenshot({path:`artifacts/public-portal/${name}-chat.png`,fullPage:true});
   await page.getByRole('textbox',{name:'Mensagem para Excambia'}).fill(example);
   await page.getByRole('button',{name:'Enviar',exact:true}).click();
-  await page.getByText('Solicitação #3 recebida para análise.',{exact:true}).waitFor();
+  await page.getByRole('article').filter({hasText:'Solicitação #3 recebida para análise.'}).waitFor();
   assert.equal(sent,true);
   await page.screenshot({path:`artifacts/public-portal/${name}-quote-conversation.png`,fullPage:true});
   await page.goto(`${base}/operacoes`);
