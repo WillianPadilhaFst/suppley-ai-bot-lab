@@ -10,9 +10,13 @@ app.use(express.static(root));app.get('*',(_req,res)=>res.sendFile(path.join(roo
 const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
 const base=`http://127.0.0.1:${server.address().port}`;
 const user={id:1,name:'Cliente de homologação',email:'cliente@example.test',role:'public',loginMethod:'email',createdAt:'2026-11-20T00:00:00Z'};
-const operation={id:1,codigo:'OP-TEST-1',titulo:'Cotação de embalagens',status:'ativa',estagioAtual:'demand',prazoDesejado:null,trackingEta:null,criadaEm:null,atualizadaEm:null,milestones:[],history:[]};
+const operation={id:1,codigo:'OP-TEST-1',titulo:'Cotação de embalagens',status:'ativa',estagioAtual:'demand',prazoDesejado:null,trackingEta:null,criadaEm:null,atualizadaEm:null,milestones:[{id:1,tipo:'Análise de fornecimento',status:'Em andamento',dataReferencia:'2026-11-20',vencimento:null}],history:[{id:2,tipo:'operacao_criada',estagio:'demand',criadoEm:'2026-11-20'}]};
 const allowed=new Set(['auth.me','conversas.list','portal.list','portal.get','quoteRequests.mine','auth.register','conversas.create','conversas.send','conversas.get']);
 const calls=new Set();let browser;
+async function capture(page,name){
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1), `Horizontal overflow on ${name}`);
+ await page.screenshot({path:`artifacts/public-portal/${name}.png`,fullPage:true});
+}
 try {
  browser=await chromium.launch({headless:true});
  await mkdir('artifacts/public-portal',{recursive:true});
@@ -42,37 +46,38 @@ try {
   await page.getByPlaceholder('seu@email.com').fill('cliente@example.test');
   await page.getByPlaceholder('Mínimo 8 caracteres').fill('Senha-de-teste-2026');
   await page.getByPlaceholder('Repita a senha').fill('Senha-de-teste-2026');
+  await capture(page,`${name}-registration`);
   await page.getByRole('button',{name:'Criar conta',exact:true}).click();
   await page.getByText(/Cadastro recebido. Aguarde a aprovação/).waitFor();
   assert.equal(registered,true);
-  await page.screenshot({path:`artifacts/public-portal/${name}-registration.png`,fullPage:true});
+  await capture(page,`${name}-registration-pending`);
   await page.goto(`${base}/`);
   await page.getByRole('heading',{name:'O que você quer importar?'}).waitFor();
-  assert.equal(await page.getByRole('button',{name:'Proformas',exact:true}).count(),0);
-  assert.equal(await page.getByRole('button',{name:'Fornecedores',exact:true}).count(),0);
-  await page.screenshot({path:`artifacts/public-portal/${name}-chat.png`,fullPage:true});
+  const menu = page.getByRole('navigation',{name:'Menu principal'});
+  assert.deepEqual(await menu.getByRole('link').allTextContents(),['Excambia','Acompanhamento','Minha conta']);
+  await capture(page,`${name}-chat`);
   await page.getByRole('button',{name:'Pedir cotação'}).click();
   assert.match(await page.getByRole('textbox',{name:'Mensagem para Excambia'}).inputValue(),/Quero pedir uma cotação/);
   await page.getByRole('textbox',{name:'Mensagem para Excambia'}).fill(example);
   await page.getByRole('button',{name:'Enviar',exact:true}).click();
   await page.getByRole('article').filter({hasText:'Solicitação #3 recebida para análise.'}).waitFor();
   assert.equal(sent,true);
-  await page.screenshot({path:`artifacts/public-portal/${name}-quote-conversation.png`,fullPage:true});
+  await capture(page,`${name}-quote-conversation`);
   await page.getByRole('navigation',{name:'Menu principal'}).getByRole('link',{name:'Acompanhamento'}).click();
   await page.getByRole('link',{name:'OP-TEST-1 — Cotação de embalagens'}).waitFor();
   await page.getByText('Solicitação #3 — Embalagens',{exact:true}).waitFor();
   await page.getByText('Ver especificações',{exact:true}).click();
   await page.getByText('500 ml',{exact:true}).waitFor();
-  await page.screenshot({path:`artifacts/public-portal/${name}-tracking.png`,fullPage:true});
-  await page.goto(`${base}/operacao/1`);
+  await capture(page,`${name}-tracking`);
+  await page.getByRole('link',{name:'OP-TEST-1 — Cotação de embalagens'}).click();
   await page.getByRole('heading',{name:'OP-TEST-1 — Cotação de embalagens'}).waitFor();
-  await page.screenshot({path:`artifacts/public-portal/${name}-operation.png`,fullPage:true});
+  await capture(page,`${name}-operation`);
   await page.goto(`${base}/operacao/2`);
   await page.getByRole('alert').filter({hasText:'Operação não encontrada.'}).waitFor();
   await page.getByRole('navigation',{name:'Menu principal'}).getByRole('link',{name:'Minha conta'}).click();
   await page.getByLabel('Nome',{exact:true}).waitFor();
   assert.equal(await page.getByText(/Consumo de tokens|Chave da API|Modelo de IA/).count(),0);
-  await page.screenshot({path:`artifacts/public-portal/${name}-account.png`,fullPage:true});
+  await capture(page,`${name}-account`);
   for(const route of ['/settings','/suppliers','/proformas','/rfq','/solicitacoes']){
    await page.goto(`${base}${route}`);
    await page.getByText(/Página não encontrada|Page Not Found|404/).first().waitFor();
