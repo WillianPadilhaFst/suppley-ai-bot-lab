@@ -1,11 +1,43 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  ArrowUp,
+  Box,
+  ClipboardList,
+  History,
+  MessageCircle,
+  Plus,
+  Ruler,
+} from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+
+const prompts = [
+  {
+    title: "Pedir cotação",
+    description: "Produto, quantidade e destino",
+    text: "Quero pedir uma cotação para importar ",
+    icon: Box,
+  },
+  {
+    title: "Calcular cubagem",
+    description: "Volume da carga",
+    text: "Quero calcular a cubagem da minha carga. As dimensões são ",
+    icon: Ruler,
+  },
+  {
+    title: "Consultar meu pedido",
+    description: "Protocolos e status",
+    text: "Qual é o status das minhas solicitações de cotação?",
+    icon: ClipboardList,
+  },
+];
+
 export default function PublicChat() {
   const [id, setId] = useState<number>();
   const [draft, setDraft] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const composer = useRef<HTMLTextAreaElement>(null);
+  const end = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
   const list = trpc.conversas.list.useQuery();
   const conversation = trpc.conversas.get.useQuery(
@@ -17,25 +49,35 @@ export default function PublicChat() {
   const send = trpc.conversas.send.useMutation({
     onSuccess: () => {
       void utils.conversas.invalidate();
+      void utils.quoteRequests.mine.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
+  const sending = send.isPending || create.isPending;
+  const messages = conversation.data?.mensagens ?? [];
+
   useEffect(() => {
-    const op = Number(new URLSearchParams(location.search).get("operacao"));
-    if (op > 0)
+    const operationId = Number(
+      new URLSearchParams(location.search).get("operacao"),
+    );
+    if (operationId > 0)
       link
-        .mutateAsync({ operacaoId: op })
-        .then((r) => setId(r.id))
+        .mutateAsync({ operacaoId: operationId })
+        .then((result) => setId(result.id))
         .catch(() => toast.error("Operação não encontrada."));
   }, []);
+
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: "end" });
+  }, [id, messages.length, sending]);
+
   async function submit() {
-    if (!draft.trim() || send.isPending || create.isPending) return;
+    const text = draft.trim();
+    if (!text || sending) return;
     try {
       const target =
-        id ??
-        (await create.mutateAsync({ titulo: draft.trim().slice(0, 100) })).id;
+        id ?? (await create.mutateAsync({ titulo: text.slice(0, 100) })).id;
       setId(target);
-      const text = draft;
       setDraft("");
       await send.mutateAsync({
         conversaId: target,
@@ -45,94 +87,163 @@ export default function PublicChat() {
       toast.error("Não foi possível enviar a mensagem.");
     }
   }
+
   const conversations = [
     ...(list.data?.operacoes ?? []),
     ...(list.data?.avulsas ?? []),
   ];
   return (
-    <div className="flex flex-col md:flex-row h-full min-h-0">
-      <aside className="md:w-64 border-b md:border-r p-4 overflow-auto shrink-0 max-h-48 md:max-h-none">
-        <Button
-          variant="outline"
-          className="w-full mb-3"
-          onClick={() => setId(undefined)}
+    <section className="pw-chat" aria-label="Excambia">
+      <header className="pw-chat-toolbar">
+        <div className="pw-chat-title">
+          <MessageCircle size={19} aria-hidden="true" />
+          <h1>Excambia</h1>
+        </div>
+        <div className="pw-chat-actions">
+          <button
+            type="button"
+            className="pw-button pw-button-quiet"
+            aria-expanded={historyOpen}
+            aria-controls="pw-chat-history"
+            onClick={() => setHistoryOpen(!historyOpen)}
+          >
+            <History size={18} aria-hidden="true" /> Histórico
+          </button>
+          <button
+            type="button"
+            className="pw-button pw-button-quiet"
+            disabled={sending}
+            onClick={() => {
+              setId(undefined);
+              setDraft("");
+              setHistoryOpen(false);
+              composer.current?.focus();
+            }}
+          >
+            <Plus size={18} aria-hidden="true" /> Nova conversa
+          </button>
+        </div>
+      </header>
+      {historyOpen && (
+        <nav
+          className="pw-chat-history pw-panel"
+          id="pw-chat-history"
+          aria-label="Histórico de conversas"
         >
-          Nova conversa
-        </Button>
-        <nav aria-label="Histórico de conversas" className="space-y-2">
-          {conversations.map((c) => (
+          <h2>Conversas</h2>
+          {list.isLoading && <p>Carregando conversas…</p>}
+          {list.isError && (
+            <p role="alert">Não foi possível carregar suas conversas.</p>
+          )}
+          {list.isSuccess && !conversations.length && (
+            <p>Você ainda não tem conversas.</p>
+          )}
+          {conversations.map((item) => (
             <button
-              key={c.id}
-              onClick={() => setId(c.id)}
-              className={`block w-full text-left rounded-lg p-2 truncate ${id === c.id ? "bg-primary/10 text-primary" : "hover:bg-muted"}`}
+              type="button"
+              key={item.id}
+              aria-current={id === item.id ? "true" : undefined}
+              disabled={sending}
+              onClick={() => {
+                setId(item.id);
+                setHistoryOpen(false);
+              }}
             >
-              {c.titulo}
+              <MessageCircle size={16} aria-hidden="true" />
+              <span>{item.titulo}</span>
             </button>
           ))}
         </nav>
-      </aside>
-      <main className="flex flex-col min-h-0 flex-1">
-        <header className="border-b p-5 flex items-center gap-3">
-          <img src="/suppley-icon.png" className="h-8 w-8" alt="" />
-          <h1 className="font-semibold text-xl text-primary">Excambia</h1>
-        </header>
-        <div className="flex-1 overflow-auto p-5 space-y-5" aria-live="polite">
-          {!id && (
-            <div className="max-w-2xl mx-auto py-12">
-              <h2 className="text-2xl font-semibold">
-                O que você quer importar?
-              </h2>
-              <p className="text-muted-foreground mt-3">
-                Conte o produto, a quantidade e o destino para preparar seu
-                pedido de cotação com a Suppley. Você também pode acompanhar
-                suas operações e analisar a cubagem da carga.
-              </p>
+      )}
+      <div className="pw-chat-feed" aria-live="polite">
+        {!id ? (
+          <div className="pw-welcome">
+            <div className="pw-welcome-mark">
+              <img src="/suppley-icon.png" alt="" />
             </div>
-          )}
-          {conversation.error && (
-            <p role="alert">Não foi possível abrir a conversa.</p>
-          )}
-          {conversation.data?.mensagens
-            .filter((m) => m.role === "user" || m.role === "assistant")
-            .map((m) => (
-              <article
-                key={m.id}
-                className={`max-w-3xl mx-auto rounded-2xl p-4 whitespace-pre-wrap ${m.role === "user" ? "bg-primary/10" : "bg-muted"}`}
-              >
-                <strong className="block text-sm mb-2">
-                  {m.role === "user" ? "Você" : "Excambia"}
-                </strong>
-                {m.content}
-              </article>
-            ))}
-          {send.isPending && (
-            <p className="text-center text-muted-foreground">
-              Preparando resposta…
+            <h2>O que você quer importar?</h2>
+            <p>
+              Conte o que você precisa. A Excambia ajuda a preparar o pedido de
+              cotação para a equipe Suppley.
             </p>
-          )}
-        </div>
-        <form
-          className="border-t p-4 flex gap-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void submit();
-          }}
+            <div className="pw-prompts">
+              {prompts.map(({ title, description, text, icon: Icon }) => (
+                <button
+                  type="button"
+                  key={title}
+                  onClick={() => {
+                    setDraft(text);
+                    composer.current?.focus();
+                  }}
+                >
+                  <span className="pw-tile-icon">
+                    <Icon size={20} aria-hidden="true" />
+                  </span>
+                  <span>
+                    <strong>{title}</strong>
+                    <small>{description}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="pw-messages">
+            {conversation.error && (
+              <p role="alert">Não foi possível abrir a conversa.</p>
+            )}
+            {conversation.isLoading && (
+              <p className="pw-muted">Abrindo conversa…</p>
+            )}
+            {messages
+              .filter(
+                (message) =>
+                  message.role === "user" || message.role === "assistant",
+              )
+              .map((message) => (
+                <article
+                  className={
+                    message.role === "user"
+                      ? "pw-bubble pw-bubble-user"
+                      : "pw-bubble"
+                  }
+                  key={message.id}
+                >
+                  <strong>
+                    {message.role === "user" ? "Você" : "Excambia"}
+                  </strong>
+                  <p>{message.content}</p>
+                </article>
+              ))}
+            {sending && <p className="pw-muted">Preparando resposta…</p>}
+            <div ref={end} />
+          </div>
+        )}
+      </div>
+      <form
+        className="pw-composer"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <textarea
+          ref={composer}
+          aria-label="Mensagem para Excambia"
+          placeholder="Descreva o produto que deseja cotar…"
+          rows={2}
+          value={draft}
+          maxLength={12000}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+        <button
+          className="pw-button pw-button-primary"
+          type="submit"
+          disabled={sending || !draft.trim()}
         >
-          <Textarea
-            aria-label="Mensagem para Excambia"
-            placeholder="Descreva o produto que deseja cotar…"
-            value={draft}
-            maxLength={12000}
-            onChange={(e) => setDraft(e.target.value)}
-            className="resize-none"
-          />
-          <Button
-            disabled={send.isPending || create.isPending || !draft.trim()}
-          >
-            Enviar
-          </Button>
-        </form>
-      </main>
-    </div>
+          <ArrowUp size={19} aria-hidden="true" /> Enviar
+        </button>
+      </form>
+    </section>
   );
 }

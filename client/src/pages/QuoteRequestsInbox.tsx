@@ -1,3 +1,6 @@
+import { CalendarDays, MapPin, Package, UserRound } from "lucide-react";
+import { Link } from "wouter";
+import "@/public-workspace.css";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -25,39 +28,70 @@ export default function QuoteRequestsInbox() {
     onError: (e) => toast.error(e.message),
   });
   return (
-    <section className="max-w-5xl mx-auto space-y-6">
-      <h1 className="text-2xl font-semibold">Solicitações de cotação</h1>
-      <p className="text-muted-foreground">
-        Demandas recebidas pela Excambia. Analise o produto e o fornecimento
-        antes de preparar a proposta comercial.
-      </p>
+    <section className="pw-page pw-theme p-0">
+      <header className="pw-page-banner">
+        <div>
+          <h1>Solicitações de cotação</h1>
+          <p>
+            Analise as solicitações recebidas pela Excambia e vincule uma
+            operação para atendimento.
+          </p>
+        </div>
+      </header>
       {query.isLoading && <p>Carregando…</p>}
       {query.error && <p role="alert">Não foi possível abrir a fila.</p>}
       {query.data?.length === 0 && <p>Nenhuma solicitação recebida.</p>}
       {query.data?.map((r) => (
-        <Card key={r.id}>
+        <Card className="pw-panel gap-4" key={r.id}>
           <CardHeader>
-            <CardTitle>
-              Solicitação #{r.id} — {r.produto}
-            </CardTitle>
+            <div className="pw-card-heading">
+              <CardTitle>
+                Solicitação #{r.id} — {r.produto}
+              </CardTitle>
+              <span className="pw-status">
+                <i aria-hidden="true" />
+                Status: {r.status.replaceAll("_", " ")}
+              </span>
+            </div>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <p>
-              {r.clienteNome} · {r.clienteEmail} · Cliente #{r.userId}
+          <CardContent className="pw-card-content">
+            <div className="pw-facts">
+              <span>
+                <UserRound size={17} aria-hidden="true" />{" "}
+                {r.clienteNome || r.clienteEmail || `Cliente #${r.userId}`}
+              </span>
+              {r.clienteNome && r.clienteEmail && <span>{r.clienteEmail}</span>}
+            </div>
+            <div className="pw-facts">
+              <span>
+                <Package size={16} aria-hidden="true" /> {r.quantidade}{" "}
+                {r.unidade}
+              </span>
+              <span>
+                <MapPin size={16} aria-hidden="true" /> {r.destinoCidade}/
+                {r.destinoUf}
+              </span>
+              <span>
+                <CalendarDays size={16} aria-hidden="true" /> {r.prazoDesejado}
+              </span>
+            </div>
+            <p className="whitespace-pre-wrap rounded-xl bg-muted p-3">
+              {r.especificacoes}
             </p>
-            <p className="whitespace-pre-wrap">{r.especificacoes}</p>
-            <p>
-              {r.quantidade} {r.unidade} · {r.destinoCidade}/{r.destinoUf}
-            </p>
-            <p>
-              Prazo desejado: {r.prazoDesejado} · Status:{" "}
-              {r.status.replaceAll("_", " ")}
-            </p>
-            <p>
-              Conversa #{r.conversaId} · Operação:{" "}
-              {r.operacaoId ?? "Ainda não vinculada"}
-            </p>
-            <div className="flex flex-wrap gap-2">
+            <div className="pw-facts">
+              {r.conversaId != null && <span>Conversa #{r.conversaId}</span>}
+              {r.operacaoId != null ? (
+                <Link
+                  className="pw-text-link"
+                  href={`/operacao/${r.operacaoId}`}
+                >
+                  Abrir operação #{r.operacaoId}
+                </Link>
+              ) : (
+                <span>Operação ainda não vinculada</span>
+              )}
+            </div>
+            <div className="pw-inbox-actions">
               <Button
                 variant="outline"
                 disabled={review.isPending}

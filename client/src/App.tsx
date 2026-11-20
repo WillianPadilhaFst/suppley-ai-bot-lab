@@ -1,3 +1,4 @@
+import PublicWorkspace from "./components/PublicWorkspace";
 import QuoteRequestsInbox from "./pages/QuoteRequestsInbox";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { PublicOperations, PublicOperation, MyAccount } from "./pages/PublicPortal";
@@ -55,11 +56,11 @@ function RouteFallback() {
 function AuthenticatedRoutes() {
   const {user,loading}=useAuth();
   if(loading)return <RouteFallback/>;
-  if(user?.role==='public')return <DashboardLayout><Switch>
+  if(user?.role==='public')return <PublicWorkspace><Switch>
     <Route path="/" component={PublicChat}/><Route path="/excambia" component={PublicChat}/>
     <Route path="/operacoes" component={PublicOperations}/><Route path="/operacao/:id" component={PublicOperation}/>
     <Route path="/minha-conta" component={MyAccount}/><Route component={NotFound}/>
-  </Switch></DashboardLayout>;
+  </Switch></PublicWorkspace>;
   return (
     <DashboardLayout>
       <Suspense fallback={<RouteFallback />}>
