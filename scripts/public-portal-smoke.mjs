@@ -11,7 +11,7 @@ const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('l
 const base=`http://127.0.0.1:${server.address().port}`;
 const user={id:1,name:'Cliente de homologação',email:'cliente@example.test',role:'public',loginMethod:'email',createdAt:'2026-11-20T00:00:00Z'};
 const operation={id:1,codigo:'OP-TEST-1',titulo:'Cotação de embalagens',status:'ativa',estagioAtual:'demand',prazoDesejado:null,trackingEta:null,criadaEm:null,atualizadaEm:null,milestones:[],history:[]};
-const allowed=new Set(['auth.me','conversas.list','portal.list','portal.get']);
+const allowed=new Set(['auth.me','conversas.list','portal.list','portal.get','quoteRequests.mine']);
 const calls=new Set();let browser;
 try {
  browser=await chromium.launch({headless:true});
@@ -24,7 +24,7 @@ try {
    const output=names.map((method,index)=>{
     calls.add(method);
     if(method==='portal.get'&&input[index]?.json?.id!==1)return {error:{json:{message:'Operação não encontrada.',code:-32004,data:{code:'NOT_FOUND',httpStatus:404,path:method}}}};
-    const data=method==='auth.me'?user:method==='conversas.list'?{operacoes:[],avulsas:[]}:method==='portal.list'?[operation]:method==='portal.get'?operation:null;
+    const data=method==='auth.me'?user:method==='conversas.list'?{operacoes:[],avulsas:[]}:method==='quoteRequests.mine'?[{id:3,produto:'Embalagens',especificacoes:'500 ml',quantidade:'1500',unidade:'UN',destinoCidade:'Navegantes',destinoUf:'SC',prazoDesejado:'A definir',status:'recebida',operacaoId:null}]:method==='portal.list'?[operation]:method==='portal.get'?operation:null;
     return {result:{data:{json:data}}};
    });
    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(output)});
@@ -36,6 +36,7 @@ try {
   await page.screenshot({path:`artifacts/public-portal/${name}-chat.png`,fullPage:true});
   await page.goto(`${base}/operacoes`);
   await page.getByRole('link',{name:'OP-TEST-1 — Cotação de embalagens'}).waitFor();
+  await page.getByText('Solicitação #3 — Embalagens',{exact:true}).waitFor();
   await page.goto(`${base}/operacao/1`);
   await page.getByRole('heading',{name:'OP-TEST-1 — Cotação de embalagens'}).waitFor();
   await page.screenshot({path:`artifacts/public-portal/${name}-operation.png`,fullPage:true});
@@ -45,7 +46,7 @@ try {
   await page.getByLabel('Nome',{exact:true}).waitFor();
   assert.equal(await page.getByText(/Consumo de tokens|Chave da API|Modelo de IA/).count(),0);
   await page.screenshot({path:`artifacts/public-portal/${name}-account.png`,fullPage:true});
-  for(const route of ['/settings','/suppliers','/proformas','/rfq']){
+  for(const route of ['/settings','/suppliers','/proformas','/rfq','/solicitacoes']){
    await page.goto(`${base}${route}`);
    await page.getByText(/Página não encontrada|Page Not Found|404/).first().waitFor();
   }

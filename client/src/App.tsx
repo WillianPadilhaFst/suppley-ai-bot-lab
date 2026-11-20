@@ -1,3 +1,4 @@
+import QuoteRequestsInbox from "./pages/QuoteRequestsInbox";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { PublicOperations, PublicOperation, MyAccount } from "./pages/PublicPortal";
 import PublicChat from "./pages/PublicChat";
@@ -84,6 +85,7 @@ function AuthenticatedRoutes() {
         <Route path="/messaging" component={Messaging} />
         <Route path="/operacoes" component={Operacoes} />
         <Route path="/operacao/:id" component={OperacaoDetail} />
+        <Route path="/solicitacoes">{() => user?.role === "admin" ? <QuoteRequestsInbox/> : <NotFound/>}</Route>
         <Route path="/proformas" component={Proformas} />
         <Route path="/parametros" component={Parametros} />
         <Route path="/memoria" component={MemoriaExcambia} />

@@ -1,3 +1,4 @@
+import { submitQuoteRequest } from "../../services/publicQuoteRequests";
 import { z } from "zod";
 import { defineSchema, type AgentTool } from "./types";
 import { getUserById } from "../../services/authService";
@@ -10,6 +11,57 @@ import {
 import { calcularCubagemTool } from "./calcularCubagem";
 export const PUBLIC_TOOLS: AgentTool[] = [
   calcularCubagemTool,
+  {
+    name: "solicitar_cotacao",
+    schema: defineSchema(
+      "solicitar_cotacao",
+      "Registra uma solicitação estruturada para avaliação pela equipe Suppley, somente a pedido expresso do cliente e após coletar todos os campos. Não emite proposta, compra ou compromisso de importação.",
+      {
+        type: "object",
+        properties: {
+          produto: { type: "string", maxLength: 255 },
+          especificacoes: { type: "string", maxLength: 6000 },
+          quantidade: {
+            type: "string",
+            description:
+              "Quantidade numérica positiva, com vírgula ou ponto decimal.",
+          },
+          unidade: { type: "string", maxLength: 30 },
+          destinoCidade: { type: "string", maxLength: 120 },
+          destinoUf: {
+            type: "string",
+            description: "Sigla da UF brasileira em maiúsculas.",
+          },
+          prazoDesejado: { type: "string", maxLength: 120 },
+        },
+        required: [
+          "produto",
+          "especificacoes",
+          "quantidade",
+          "unidade",
+          "destinoCidade",
+          "destinoUf",
+          "prazoDesejado",
+        ],
+        additionalProperties: false,
+      },
+    ),
+    async run(args, ctx) {
+      if (!ctx.conversaId)
+        return {
+          ok: false,
+          summary: "Abra uma conversa para registrar a solicitação.",
+        };
+      const user = await getUserById(ctx.userId);
+      requireApproved(user);
+      return {
+        ok: true,
+        summary:
+          "Solicitação recebida para avaliação pela equipe Suppley. Ainda não é uma proposta comercial.",
+        data: await submitQuoteRequest(user, args, ctx.conversaId),
+      };
+    },
+  },
   {
     name: "consultar_minhas_operacoes",
     schema: defineSchema(

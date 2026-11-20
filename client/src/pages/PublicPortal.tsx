@@ -12,12 +12,49 @@ const date = (value: Date | string | null) =>
 const label = (value: string) => value.replaceAll("_", " ");
 export function PublicOperations() {
   const { data, error, isLoading } = trpc.portal.list.useQuery();
+  const requests = trpc.quoteRequests.mine.useQuery();
   return (
     <section className="max-w-5xl mx-auto space-y-6">
       <h1 className="text-2xl font-semibold">Acompanhamento</h1>
       <p className="text-muted-foreground">
         Status e prazos das suas operações.
       </p>
+      <section className="space-y-4" aria-label="Suas solicitações de cotação">
+        <h2 className="text-xl font-semibold">Solicitações de cotação</h2>
+        {requests.isLoading && <p>Carregando solicitações…</p>}
+        {requests.error && (
+          <p role="alert">Não foi possível carregar suas solicitações.</p>
+        )}
+        {requests.data?.length === 0 && (
+          <p>Peça uma cotação pela Excambia para receber seu protocolo.</p>
+        )}
+        {requests.data?.map((r) => (
+          <Card key={r.id}>
+            <CardHeader>
+              <CardTitle>
+                Solicitação #{r.id} — {r.produto}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p>Status: {label(r.status)}</p>
+              <p>
+                {r.quantidade} {r.unidade} · {r.destinoCidade}/{r.destinoUf}
+              </p>
+              <p>Prazo desejado: {r.prazoDesejado}</p>
+              <details>
+                <summary>Ver especificações</summary>
+                <p className="whitespace-pre-wrap">{r.especificacoes}</p>
+              </details>
+              {r.operacaoId && (
+                <Link href={`/operacao/${r.operacaoId}`}>
+                  Acompanhar operação vinculada
+                </Link>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </section>
+      <h2 className="text-xl font-semibold">Operações</h2>
       {isLoading && <p>Carregando…</p>}
       {error && <p role="alert">Não foi possível carregar suas operações.</p>}
       {data?.length === 0 && (

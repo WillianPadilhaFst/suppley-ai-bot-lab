@@ -118,7 +118,7 @@ export const conversasRouter = router({
       input = await validateChat(ctx.user, input);
       if (ctx.user.role === 'public') {
         await conversaDb.addMessage(input.conversaId, 'user', input.messages.at(-1)!.content);
-        const result = await runPublicChat(ctx.user, input.messages);
+        const result = await runPublicChat(ctx.user, input.messages, {conversaId:input.conversaId});
         await conversaDb.addMessage(input.conversaId, 'assistant', result.reply, result.toolsUsed, result.toolResults);
         return result;
       }

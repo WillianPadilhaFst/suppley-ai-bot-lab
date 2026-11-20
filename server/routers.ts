@@ -1,3 +1,4 @@
+import {quoteRequestsRouter} from "./routers/quoteRequestsRouter";
 import { portalRouter } from "./routers/portalRouter";
 import { router } from "./_core/trpc";
 import { systemRouter } from "./_core/systemRouter";
@@ -73,6 +74,7 @@ export const appRouter = router({
   // Motor V2 endpoints (paralelos ao sistema existente)
   estimativa: estimativaRouter,
   operations: operationsRouter,
+  quoteRequests: quoteRequestsRouter,
 });
 
 export type AppRouter = typeof appRouter;

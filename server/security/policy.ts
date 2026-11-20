@@ -33,6 +33,7 @@ export const publicPaths = new Set([
   ...Array.from(anonymousPaths),
   "auth.changePassword",
   "auth.updateProfile",
+  "quoteRequests.mine",
   "portal.list",
   "portal.get",
   "portal.create",
@@ -63,6 +64,7 @@ export const publicToolNames = new Set([
   "consultar_minhas_operacoes",
   "criar_minha_operacao",
   "calcular_cubagem",
+  "solicitar_cotacao",
 ]);
 export function authorizeTool(user: Principal, name: string) {
   requireApproved(user);

@@ -21,6 +21,7 @@ describe.skipIf(!url)("MySQL migration and owner isolation", () => {
       await conn.query("USE suppley_migration_test");
       // This fixture database is exclusively owned by this integration test.
       for (const table of [
+        "public_quote_requests",
         "mcp_identities",
         "security_audit",
         "security_limits",
@@ -42,6 +43,19 @@ describe.skipIf(!url)("MySQL migration and owner isolation", () => {
         .map((s) => s.trim())
         .filter(Boolean))
         await conn.query(statement);
+      const intakeMigration = await readFile(
+        "drizzle/0051_public_quote_requests.sql",
+        "utf8",
+      );
+      for (const statement of intakeMigration
+        .split(";")
+        .map((v) => v.trim())
+        .filter(Boolean))
+        await conn.query(statement);
+      const [intakeTables] = await conn.query(
+        "SHOW TABLES LIKE 'public_quote_requests'",
+      );
+      expect(intakeTables).toHaveLength(1);
       const [users] = await conn.query("SELECT * FROM users ORDER BY id");
       expect(users).toEqual([
         expect.objectContaining({
@@ -84,6 +98,84 @@ describe.skipIf(!url)("MySQL migration and owner isolation", () => {
       expect((await listOwnOperations(b)).map((o) => o.id)).toEqual([900002]);
     } finally {
       await conn.query("DELETE FROM operacoes WHERE id IN (900001,900002)");
+      await conn.end();
+    }
+  }, 20000);
+  it("isolates quotation intake, deduplicates retries and enforces client ownership on links", async () => {
+    const conn = await mysql.createConnection(url!);
+    const a = { id: 900003, role: "public", approvalStatus: "approved" },
+      b = { ...a, id: 900004 },
+      admin = { id: 1, role: "admin", approvalStatus: "approved" };
+    try {
+      const migration = await readFile(
+        "drizzle/0050_public_access_mcp.sql",
+        "utf8",
+      );
+      for (const statement of migration
+        .split(";")
+        .map((v) => v.trim())
+        .filter((v) => /^CREATE TABLE security_(audit|limits)/.test(v)))
+        await conn.query(
+          statement.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS"),
+        );
+      await conn.query(
+        "INSERT INTO conversas(id,userId,titulo) VALUES (900003,900003,'Client A'),(900004,900004,'Client B')",
+      );
+      await conn.query(
+        "INSERT INTO operacoes(id,userId,codigo,titulo) VALUES (900003,900003,'REQ-A','Client A'),(900004,900004,'REQ-B','Client B')",
+      );
+      const svc = await import("../services/publicQuoteRequests");
+      const input = {
+        produto: "Embalagens",
+        especificacoes: "Material reciclável, 500 ml",
+        quantidade: "1500",
+        unidade: "UN",
+        destinoCidade: "Navegantes",
+        destinoUf: "SC",
+        prazoDesejado: "A definir com a equipe",
+      };
+      await expect(
+        svc.submitQuoteRequest(a, input, 900004),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      const first = await svc.submitQuoteRequest(a, input, 900003);
+      expect((await svc.submitQuoteRequest(a, input, 900003)).id).toBe(
+        first.id,
+      );
+      await svc.submitQuoteRequest(
+        b,
+        { ...input, produto: "Produto do cliente B" },
+        900004,
+      );
+      expect((await svc.listOwnQuoteRequests(a)).map((v) => v.produto)).toEqual(
+        ["Embalagens"],
+      );
+      expect((await svc.listOwnQuoteRequests(b)).map((v) => v.produto)).toEqual(
+        ["Produto do cliente B"],
+      );
+      expect(first).not.toHaveProperty("requestKey");
+      expect(first).not.toHaveProperty("userId");
+      await expect(svc.listQuoteInbox(a)).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+      await expect(
+        svc.reviewQuoteRequest(a, first.id, "encerrada"),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(
+        svc.linkQuoteOperation(admin, first.id, 900004),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await svc.linkQuoteOperation(admin, first.id, 900003);
+      expect((await svc.listOwnQuoteRequests(a))[0]).toMatchObject({
+        operacaoId: 900003,
+        status: "vinculada",
+      });
+      await svc.reviewQuoteRequest(admin, first.id, "em_analise");
+      expect((await svc.listOwnQuoteRequests(a))[0].status).toBe("em_analise");
+    } finally {
+      await conn.query(
+        "DELETE FROM public_quote_requests WHERE userId IN (900003,900004)",
+      );
+      await conn.query("DELETE FROM conversas WHERE id IN (900003,900004)");
+      await conn.query("DELETE FROM operacoes WHERE id IN (900003,900004)");
       await conn.end();
     }
   }, 20000);

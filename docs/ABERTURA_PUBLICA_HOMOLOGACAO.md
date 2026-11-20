@@ -4,11 +4,11 @@
 
 O cliente pede cotação pela Excambia e acompanha operações próprias. A Suppley avalia fornecedores cadastrados e conduz o fornecimento e a importação. O cliente não acessa o cadastro interno de fornecedores, preços de compra, margens ou condições comerciais restritas.
 
-A conversa coleta produto, especificações, quantidade/unidade, destino e prazo. O cliente pode solicitar o registro de uma operação inicial. Esse registro não constitui proposta, compra, contratação ou envio externo. Neste incremento, detalhes ficam no histórico da conversa; não existe envio automático para fornecedores ou fila comercial dedicada. A equipe deverá validar o processo de atendimento antes do piloto. Propostas e cálculos comerciais públicos exigem projeção própria de campos autorizados e aprovação interna; os routers internos permanecem bloqueados.
+A conversa coleta produto, especificações, quantidade/unidade, destino e prazo. O cliente pode solicitar o registro de uma operação inicial. Esse registro não constitui proposta, compra, contratação ou envio externo. A ferramenta solicitar_cotacao registra uma solicitação estruturada em public_quote_requests, com protocolo, proprietário e conversa validada pelo servidor. Repetições idênticas na mesma conversa retornam o mesmo protocolo. O cliente acompanha as próprias solicitações em Acompanhamento. A fila /solicitacoes e suas APIs são exclusivas de administradores, que podem iniciar análise, encerrar e vincular uma operação do mesmo cliente. Não existe envio automático para fornecedores. A equipe deverá validar o atendimento antes do piloto. Propostas e cálculos comerciais públicos exigem projeção própria de campos autorizados e aprovação interna; os routers internos permanecem bloqueados.
 
 ## Migração e configuração
 
-Aplicar drizzle/0050_public_access_mcp.sql primeiro em cópia de homologação MySQL 8. Preserva usuários, senhas e papéis existentes. Novos cadastros públicos aguardam aprovação. Nunca aplicar automaticamente em produção. As tabelas security_limits/security_audit são necessárias antes de iniciar esta versão.
+Aplicar drizzle/0050_public_access_mcp.sql e depois drizzle/0051_public_quote_requests.sql primeiro em cópia de homologação MySQL 8. Preserva usuários, senhas e papéis existentes. Novos cadastros públicos aguardam aprovação. Nunca aplicar automaticamente em produção. As tabelas security_limits/security_audit são necessárias antes de iniciar esta versão.
 
 Preservar JWT_SECRET, .env, .env.production, volumes e overrides existentes. Não executar down, down -v, prune nem reiniciar suppley-mysql. Links antigos de arquivos sem finalidade, expiração ou proprietário válido deixam de funcionar; links públicos para documentos internos são bloqueados.
 
@@ -29,6 +29,6 @@ Definir retenção e limpeza periódica de security_limits e security_audit em h
 
 ## Evidências e pendências
 
-TypeScript, build e testes sem MySQL foram executados durante o desenvolvimento. Reexecutar após alterações finais. Testes com MySQL real, interface em desktop/mobile e regressão integral precisam passar antes da homologação. O endpoint MCP requer validação com o provedor real. Não publicar nem fazer deploy antes da homologação.
+TypeScript, build e testes sem MySQL foram executados durante o desenvolvimento. O CI do commit cc02aef aprovou 635 testes com MySQL real, regressão de cotações, TypeScript, build, CodeQL e smoke desktop/mobile. Reexecutar o CI após o incremento de solicitações estruturadas. A homologação humana continua necessária. O endpoint MCP requer validação com o provedor real. Não publicar nem fazer deploy antes da homologação.
 
 Em 20/11/2026, evidências do console de produção mostraram atualização NGINX para 1.24.0-2ubuntu7.21, configuração válida, serviço ativo e HTTPS local HTTP/1.1 com status 200 após desativar HTTP/2. Changelog do pacote lista as correções CVE-2026-123007 e CVE-2026-123633 já na revisão .20. Manter HTTP/2 desativado até revisão específica. Reinício de kernel pendente deve ser planejado separadamente.

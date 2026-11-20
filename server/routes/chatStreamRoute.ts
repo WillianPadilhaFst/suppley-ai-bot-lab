@@ -48,7 +48,7 @@ router.post("/api/chat/stream", async (req: Request, res: Response) => {
     const payload = await validateChat(user, parsed.data);
     if (user.role === 'public') {
       await conversaDb.addMessage(payload.conversaId,'user',payload.messages.at(-1)!.content);
-      const result = await runPublicChat(user,payload.messages);
+      const result = await runPublicChat(user,payload.messages,{conversaId:payload.conversaId});
       await conversaDb.addMessage(payload.conversaId,'assistant',result.reply,result.toolsUsed,result.toolResults);
       res.setHeader('Content-Type','text/event-stream');
       res.setHeader('Cache-Control','no-store');

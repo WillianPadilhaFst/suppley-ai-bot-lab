@@ -44,6 +44,8 @@ const menuItems = [
   { icon: Workflow, label: "Painel de operações", path: "/operacoes", section: "operacoes" },
   { icon: FileText, label: "Proformas", path: "/proformas", section: "operacoes" },
 
+  { icon: FileText, label: "Solicitações de cotação", path: "/solicitacoes", section: "operacoes", adminOnly: true },
+
   // BASE OPERACIONAL (Cadastros) — ambiente unificado: fornecedores + compradores
   { icon: Building2, label: "Fornecedores", path: "/suppliers", section: "base" },
   { icon: Package, label: "Ativos", path: "/products", section: "base" },
@@ -118,7 +120,7 @@ function DashboardLayoutContent({
     {icon:OrbitalIcon,label:'Excambia',path:'/excambia',section:'inteligencia'},
     {icon:Workflow,label:'Acompanhamento',path:'/operacoes',section:'operacoes'},
     {icon:Settings,label:'Minha conta',path:'/minha-conta',section:'operacoes'},
-  ] : menuItems;
+  ] : menuItems.filter(item => !("adminOnly" in item) || user?.role === "admin");
   const activeMenuItem = visibleItems.find(item => item.path === location);
   const isMobile = useIsMobile();
 
