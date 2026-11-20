@@ -144,7 +144,7 @@ export default function Register() {
                 />
               </div>
             </CardContent>
-            <CardFooter className="flex flex-col gap-4">
+            <CardFooter className="mt-5 flex flex-col gap-4">
               <Button
                 type="submit"
                 className="pw-button pw-button-primary w-full"

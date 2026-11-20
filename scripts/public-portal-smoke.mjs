@@ -42,11 +42,12 @@ try {
    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(output)});
   });
   await page.goto(`${base}/register`);
+  await page.getByRole('heading',{name:'Crie sua conta'}).waitFor();
+  await capture(page,`${name}-registration`);
   await page.getByPlaceholder('Seu nome').fill('Cliente de homologação');
   await page.getByPlaceholder('seu@email.com').fill('cliente@example.test');
   await page.getByPlaceholder('Mínimo 8 caracteres').fill('Senha-de-teste-2026');
   await page.getByPlaceholder('Repita a senha').fill('Senha-de-teste-2026');
-  await capture(page,`${name}-registration`);
   await page.getByRole('button',{name:'Criar conta',exact:true}).click();
   await page.getByText(/Cadastro recebido. Aguarde a aprovação/).waitFor();
   assert.equal(registered,true);
