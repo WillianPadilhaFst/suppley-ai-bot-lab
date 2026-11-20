@@ -11,29 +11,51 @@ const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('l
 const base=`http://127.0.0.1:${server.address().port}`;
 const user={id:1,name:'Cliente de homologação',email:'cliente@example.test',role:'public',loginMethod:'email',createdAt:'2026-11-20T00:00:00Z'};
 const operation={id:1,codigo:'OP-TEST-1',titulo:'Cotação de embalagens',status:'ativa',estagioAtual:'demand',prazoDesejado:null,trackingEta:null,criadaEm:null,atualizadaEm:null,milestones:[],history:[]};
-const allowed=new Set(['auth.me','conversas.list','portal.list','portal.get','quoteRequests.mine']);
+const allowed=new Set(['auth.me','conversas.list','portal.list','portal.get','quoteRequests.mine','auth.register','conversas.create','conversas.send','conversas.get']);
 const calls=new Set();let browser;
 try {
  browser=await chromium.launch({headless:true});
  await mkdir('artifacts/public-portal',{recursive:true});
  for(const [name,viewport] of [['desktop',{width:1440,height:1000}],['mobile',{width:390,height:844}]]){
   const context=await browser.newContext({viewport});const page=await context.newPage();
+  let registered=false;let sent=false;
+  const example="Quero cotar 1500 embalagens de 500 ml para Navegantes.";
   await page.route('**/api/trpc/**',async route=>{
    const req=route.request();const url=new URL(req.url());const names=decodeURIComponent(url.pathname.split('/api/trpc/')[1]).split(',');
    const input=JSON.parse(url.searchParams.get('input')??'{}');
    const output=names.map((method,index)=>{
     calls.add(method);
+    if(method==='auth.register'){registered=true;return {result:{data:{json:{success:true,pendingApproval:true}}}};}
+    if(method==='conversas.create')return {result:{data:{json:{id:4}}}};
+    if(method==='conversas.send'){sent=true;return {result:{data:{json:{reply:'Solicitação #3 recebida para análise.'}}}};}
+    if(method==='conversas.get')return {result:{data:{json:{id:4,mensagens:sent?[
+     {id:1,role:'user',content:example},{id:2,role:'assistant',content:'Solicitação #3 recebida para análise.'}
+    ]:[]}}}};
     if(method==='portal.get'&&input[index]?.json?.id!==1)return {error:{json:{message:'Operação não encontrada.',code:-32004,data:{code:'NOT_FOUND',httpStatus:404,path:method}}}};
     const data=method==='auth.me'?user:method==='conversas.list'?{operacoes:[],avulsas:[]}:method==='quoteRequests.mine'?[{id:3,produto:'Embalagens',especificacoes:'500 ml',quantidade:'1500',unidade:'UN',destinoCidade:'Navegantes',destinoUf:'SC',prazoDesejado:'A definir',status:'recebida',operacaoId:null}]:method==='portal.list'?[operation]:method==='portal.get'?operation:null;
     return {result:{data:{json:data}}};
    });
    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(output)});
   });
+  await page.goto(`${base}/register`);
+  await page.getByPlaceholder('Seu nome').fill('Cliente de homologação');
+  await page.getByPlaceholder('seu@email.com').fill('cliente@example.test');
+  await page.getByPlaceholder('Mínimo 8 caracteres').fill('Senha-de-teste-2026');
+  await page.getByPlaceholder('Repita a senha').fill('Senha-de-teste-2026');
+  await page.getByRole('button',{name:'Criar conta',exact:true}).click();
+  await page.getByText(/Cadastro recebido. Aguarde a aprovação/).waitFor();
+  assert.equal(registered,true);
+  await page.screenshot({path:`artifacts/public-portal/${name}-registration.png`,fullPage:true});
   await page.goto(`${base}/`);
   await page.getByRole('heading',{name:'O que você quer importar?'}).waitFor();
   assert.equal(await page.getByRole('button',{name:'Proformas',exact:true}).count(),0);
   assert.equal(await page.getByRole('button',{name:'Fornecedores',exact:true}).count(),0);
   await page.screenshot({path:`artifacts/public-portal/${name}-chat.png`,fullPage:true});
+  await page.getByRole('textbox',{name:'Mensagem para Excambia'}).fill(example);
+  await page.getByRole('button',{name:'Enviar',exact:true}).click();
+  await page.getByText('Solicitação #3 recebida para análise.',{exact:true}).waitFor();
+  assert.equal(sent,true);
+  await page.screenshot({path:`artifacts/public-portal/${name}-quote-conversation.png`,fullPage:true});
   await page.goto(`${base}/operacoes`);
   await page.getByRole('link',{name:'OP-TEST-1 — Cotação de embalagens'}).waitFor();
   await page.getByText('Solicitação #3 — Embalagens',{exact:true}).waitFor();
