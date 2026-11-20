@@ -1,4 +1,7 @@
-import { submitQuoteRequest } from "../../services/publicQuoteRequests";
+import {
+  submitQuoteRequest,
+  listOwnQuoteRequests,
+} from "../../services/publicQuoteRequests";
 import { z } from "zod";
 import { defineSchema, type AgentTool } from "./types";
 import { getUserById } from "../../services/authService";
@@ -11,6 +14,24 @@ import {
 import { calcularCubagemTool } from "./calcularCubagem";
 export const PUBLIC_TOOLS: AgentTool[] = [
   calcularCubagemTool,
+  {
+    name: "consultar_minhas_solicitacoes",
+    schema: defineSchema(
+      "consultar_minhas_solicitacoes",
+      "Consulta somente os próprios protocolos e status de solicitações de cotação.",
+      { type: "object", properties: {}, additionalProperties: false },
+    ),
+    async run(args, ctx) {
+      z.object({}).strict().parse(args);
+      const user = await getUserById(ctx.userId);
+      requireApproved(user);
+      return {
+        ok: true,
+        summary: "Suas solicitações de cotação.",
+        data: await listOwnQuoteRequests(user),
+      };
+    },
+  },
   {
     name: "solicitar_cotacao",
     schema: defineSchema(

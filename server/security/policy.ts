@@ -65,6 +65,7 @@ export const publicToolNames = new Set([
   "criar_minha_operacao",
   "calcular_cubagem",
   "solicitar_cotacao",
+  "consultar_minhas_solicitacoes",
 ]);
 export function authorizeTool(user: Principal, name: string) {
   requireApproved(user);
