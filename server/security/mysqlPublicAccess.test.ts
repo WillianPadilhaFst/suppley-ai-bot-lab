@@ -141,7 +141,7 @@ describe.skipIf(!url)("MySQL migration and owner isolation", () => {
       expect((await svc.submitQuoteRequest(a, input, 900003)).id).toBe(
         first.id,
       );
-      await svc.submitQuoteRequest(
+      const second = await svc.submitQuoteRequest(
         b,
         { ...input, produto: "Produto do cliente B" },
         900004,
@@ -168,6 +168,24 @@ describe.skipIf(!url)("MySQL migration and owner isolation", () => {
         operacaoId: 900003,
         status: "vinculada",
       });
+      await svc.reviewQuoteRequest(admin, second.id, "encerrada");
+      await expect(
+        svc.startQuoteOperation(admin, second.id),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      await svc.reviewQuoteRequest(admin, second.id, "em_analise");
+      const [started, retried] = await Promise.all([
+        svc.startQuoteOperation(admin, second.id),
+        svc.startQuoteOperation(admin, second.id),
+      ]);
+      expect(started.operacaoId).toBe(retried.operacaoId);
+      const { getOwnOperation } = await import("../services/publicOperations");
+      expect(await getOwnOperation(b, started.operacaoId)).toMatchObject({
+        titulo: "Produto do cliente B",
+        estagioAtual: "demand",
+      });
+      await expect(
+        getOwnOperation(a, started.operacaoId),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
       await svc.reviewQuoteRequest(admin, first.id, "em_analise");
       expect((await svc.listOwnQuoteRequests(a))[0].status).toBe("em_analise");
     } finally {
@@ -175,7 +193,13 @@ describe.skipIf(!url)("MySQL migration and owner isolation", () => {
         "DELETE FROM public_quote_requests WHERE userId IN (900003,900004)",
       );
       await conn.query("DELETE FROM conversas WHERE id IN (900003,900004)");
-      await conn.query("DELETE FROM operacoes WHERE id IN (900003,900004)");
+      await conn.query(
+        "DELETE FROM operacao_eventos WHERE operacaoId IN (SELECT id FROM operacoes WHERE userId IN (900003,900004))",
+      );
+      await conn.query(
+        "DELETE FROM operacao_estagios WHERE operacaoId IN (SELECT id FROM operacoes WHERE userId IN (900003,900004))",
+      );
+      await conn.query("DELETE FROM operacoes WHERE userId IN (900003,900004)");
       await conn.end();
     }
   }, 20000);

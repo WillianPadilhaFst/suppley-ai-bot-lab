@@ -4,6 +4,7 @@ import {
   listQuoteInbox,
   reviewQuoteRequest,
   linkQuoteOperation,
+  startQuoteOperation,
 } from "../services/publicQuoteRequests";
 const input = {
   produto: "Embalagens",
@@ -41,6 +42,9 @@ describe("Quotation request boundary", () => {
       await expect(
         reviewQuoteRequest(user, 1, "em_analise"),
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(startQuoteOperation(user, 1)).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
       await expect(linkQuoteOperation(user, 1, 1)).rejects.toMatchObject({
         code: "FORBIDDEN",
       });

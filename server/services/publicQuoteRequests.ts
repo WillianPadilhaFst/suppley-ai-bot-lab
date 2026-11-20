@@ -2,7 +2,13 @@ import { createHash } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { publicQuoteRequests, users } from "../../drizzle/schema";
+import {
+  publicQuoteRequests,
+  users,
+  operacoes,
+  operacaoEstagios,
+  operacaoEventos,
+} from "../../drizzle/schema";
 import { getDb } from "../db/connection";
 import { requireApproved, type Principal } from "../security/policy";
 import { audit, consumeLimit } from "../security/abuse";
@@ -185,4 +191,54 @@ export async function linkQuoteOperation(
     .set({ operacaoId, status: "vinculada" })
     .where(eq(publicQuoteRequests.id, id));
   return { success: true };
+}
+
+/** Atomically hands an intake to operations, preserving the customer's ownership. */
+export async function startQuoteOperation(user: Principal, id: number) {
+  requireAdmin(user);
+  const db = database();
+  await audit(user.id, "quote-request.start-operation", "requested");
+  return db.transaction(async (tx) => {
+    const [request] = await tx
+      .select()
+      .from(publicQuoteRequests)
+      .where(eq(publicQuoteRequests.id, id))
+      .limit(1)
+      .for("update");
+    if (!request) throw new TRPCError({ code: "NOT_FOUND" });
+    if (request.operacaoId) return { operacaoId: request.operacaoId };
+    if (request.status === "encerrada")
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Reabra a análise antes de criar a operação.",
+      });
+    // Separate deterministic prefix avoids affecting the existing OP-year counter.
+    const [result] = await tx
+      .insert(operacoes)
+      .values({
+        userId: request.userId,
+        codigo: `SOL-${request.id}`,
+        titulo: request.produto,
+        estagioAtual: "demand",
+        status: "ativa",
+        modo: "desenvolvimento",
+        responsavelId: user.id,
+      });
+    const operacaoId = Number(result.insertId);
+    await tx.insert(operacaoEstagios).values({ operacaoId, estagio: "demand" });
+    await tx
+      .insert(operacaoEventos)
+      .values({
+        operacaoId,
+        tipo: "operacao_criada",
+        estagio: "demand",
+        autor: "usuario",
+        titulo: "Operação criada para atendimento da solicitação de cotação",
+      });
+    await tx
+      .update(publicQuoteRequests)
+      .set({ operacaoId, status: "vinculada" })
+      .where(eq(publicQuoteRequests.id, id));
+    return { operacaoId };
+  });
 }

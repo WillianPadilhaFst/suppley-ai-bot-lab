@@ -16,6 +16,10 @@ export default function QuoteRequestsInbox() {
     onSuccess: success,
     onError: (e) => toast.error(e.message),
   });
+  const start = trpc.quoteRequests.start.useMutation({
+    onSuccess: success,
+    onError: (e) => toast.error(e.message),
+  });
   const link = trpc.quoteRequests.link.useMutation({
     onSuccess: success,
     onError: (e) => toast.error(e.message),
@@ -71,6 +75,14 @@ export default function QuoteRequestsInbox() {
                 Encerrar solicitação
               </Button>
             </div>
+            {!r.operacaoId && (
+              <Button
+                disabled={start.isPending || r.status === "encerrada"}
+                onClick={() => start.mutate({ id: r.id })}
+              >
+                Criar operação para atendimento
+              </Button>
+            )}
             <form
               className="flex flex-wrap gap-2"
               onSubmit={(e) => {

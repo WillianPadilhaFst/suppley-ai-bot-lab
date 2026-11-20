@@ -5,6 +5,7 @@ import {
   listQuoteInbox,
   reviewQuoteRequest,
   linkQuoteOperation,
+  startQuoteOperation,
 } from "../services/publicQuoteRequests";
 export const quoteRequestsRouter = router({
   mine: protectedProcedure.query(({ ctx }) => listOwnQuoteRequests(ctx.user)),
@@ -21,6 +22,9 @@ export const quoteRequestsRouter = router({
     .mutation(({ ctx, input }) =>
       reviewQuoteRequest(ctx.user, input.id, input.status),
     ),
+  start: adminProcedure
+    .input(z.object({ id: z.number().int().positive() }).strict())
+    .mutation(({ ctx, input }) => startQuoteOperation(ctx.user, input.id)),
   link: adminProcedure
     .input(
       z

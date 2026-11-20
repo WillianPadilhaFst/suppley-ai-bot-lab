@@ -55,14 +55,15 @@ try {
  }
  assert.deepEqual([...calls].filter(p=>!allowed.has(p)),[],'Public UI requested internal API');
  const adminContext=await browser.newContext({viewport:{width:1440,height:1000}});
- const adminPage=await adminContext.newPage();let reviewed=false;
+ const adminPage=await adminContext.newPage();let reviewed=false;let started=false;
  await adminPage.route('**/api/trpc/**',async route=>{
   const url=new URL(route.request().url());const names=decodeURIComponent(url.pathname.split('/api/trpc/')[1]).split(',');
   const output=names.map(method=>{
    let data;
    if(method==='auth.me')data={...user,id:10,role:'admin',name:'Administrador de homologação'};
-   else if(method==='quoteRequests.inbox')data=[{id:3,userId:1,conversaId:4,clienteNome:user.name,clienteEmail:user.email,produto:'Embalagens',especificacoes:'500 ml',quantidade:'1500',unidade:'UN',destinoCidade:'Navegantes',destinoUf:'SC',prazoDesejado:'A definir',status:reviewed?'em_analise':'recebida',operacaoId:null}];
+   else if(method==='quoteRequests.inbox')data=[{id:3,userId:1,conversaId:4,clienteNome:user.name,clienteEmail:user.email,produto:'Embalagens',especificacoes:'500 ml',quantidade:'1500',unidade:'UN',destinoCidade:'Navegantes',destinoUf:'SC',prazoDesejado:'A definir',status:started?'vinculada':reviewed?'em_analise':'recebida',operacaoId:started?1:null}];
    else if(method==='quoteRequests.review'){reviewed=true;data={success:true};}
+   else if(method==='quoteRequests.start'){started=true;data={operacaoId:1};}
    else throw Error(`Unexpected admin API: ${method}`);
    return {result:{data:{json:data}}};
   });
@@ -73,6 +74,9 @@ try {
  await adminPage.getByRole('button',{name:'Iniciar análise',exact:true}).click();
  await adminPage.getByText(/Status: em analise/).waitFor();
  assert.equal(reviewed,true);
+ await adminPage.getByRole('button',{name:'Criar operação para atendimento',exact:true}).click();
+ await adminPage.getByText(/Status: vinculada/).waitFor();
+ assert.equal(started,true);
  await adminPage.screenshot({path:'artifacts/public-portal/admin-intake.png',fullPage:true});
  await adminContext.close();
  console.log('Public portal smoke passed: desktop/mobile, own operation, foreign operation, personal account, direct internal URLs, administrative intake review.');
