@@ -8,6 +8,16 @@ import { audit, consumeLimit } from "../security/abuse";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
+  errorFormatter({ shape, ctx }) {
+    if (ctx?.user?.role !== 'public') return shape;
+    return {
+      ...shape,
+      message: shape.data.code === 'INTERNAL_SERVER_ERROR'
+        ? 'Serviço temporariamente indisponível. Tente novamente mais tarde.'
+        : shape.message,
+      data: { ...shape.data, stack: undefined },
+    };
+  },
 });
 
 export const router = t.router;
