@@ -1,5 +1,7 @@
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { requireApproved } from "../security/policy";
+import { audit } from "../security/abuse";
+import { sql, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { users, User } from "../../drizzle/schema";
 import { nanoid } from "nanoid";
@@ -58,7 +60,7 @@ export async function registerUser(input: RegisterInput): Promise<AuthResult> {
     const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
 
     // Determine role - admin for owner email
-    const isAdmin = input.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    // Public registration never grants internal privileges.
 
     // Create user
     const result = await db.insert(users).values({
@@ -66,7 +68,8 @@ export async function registerUser(input: RegisterInput): Promise<AuthResult> {
       email: input.email.toLowerCase(),
       passwordHash,
       loginMethod: "email",
-      role: isAdmin ? "admin" : "user",
+      role: "public",
+      approvalStatus: "pending",
       isEmailVerified: false,
       lastSignedIn: new Date(),
     });
@@ -115,6 +118,8 @@ export async function loginUser(input: LoginInput): Promise<AuthResult> {
       return { success: false, error: "Email ou senha incorretos" };
     }
 
+    try { requireApproved(user); } catch { return { success: false, error: "Cadastro aguardando aprovação ou acesso suspenso." }; }
+
     // Update last signed in
     await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, user.id));
 
@@ -135,7 +140,7 @@ export async function countUsers(): Promise<number> {
   return rows.length;
 }
 
-export type AdminUserRow = Pick<User, "id" | "name" | "email" | "role" | "createdAt" | "lastSignedIn">;
+export type AdminUserRow = Pick<User, "id" | "name" | "email" | "role" | "approvalStatus" | "createdAt" | "lastSignedIn">;
 
 /**
  * Lista de usuários para a área administrativa (sem hashes/segredos).
@@ -145,7 +150,7 @@ export async function listUsers(): Promise<AdminUserRow[]> {
   if (!db) return [];
   const rows = await db.select().from(users);
   return rows
-    .map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, createdAt: u.createdAt, lastSignedIn: u.lastSignedIn }))
+    .map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, approvalStatus: u.approvalStatus, createdAt: u.createdAt, lastSignedIn: u.lastSignedIn }))
     .sort((a, b) => a.id - b.id);
 }
 
@@ -153,12 +158,12 @@ export interface AdminCreateUserInput {
   name: string;
   email: string;
   password: string;
-  role?: "user" | "admin";
+  role?: "user" | "admin" | "public";
 }
 
 /**
  * Criação de usuário pelo ADMINISTRADOR (não abre sessão, define papel).
- * O email do dono (ADMIN_EMAIL) é sempre admin, independentemente do input.
+ * O papel é definido explicitamente pelo administrador autorizado.
  */
 export async function adminCreateUser(input: AdminCreateUserInput): Promise<AuthResult> {
   const db = await getDb();
@@ -170,8 +175,7 @@ export async function adminCreateUser(input: AdminCreateUserInput): Promise<Auth
     if (input.password.length < 8) return { success: false, error: "A senha deve ter pelo menos 8 caracteres" };
 
     const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
-    const isOwner = input.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-    const role: "user" | "admin" = isOwner ? "admin" : (input.role ?? "user");
+    const role = input.role ?? "user";
 
     const result = await db.insert(users).values({
       name: input.name,
@@ -195,7 +199,7 @@ export async function adminCreateUser(input: AdminCreateUserInput): Promise<Auth
 /**
  * Atualiza o papel de um usuário. O administrador principal não pode ser rebaixado.
  */
-export async function updateUserRole(id: number, role: "user" | "admin"): Promise<AuthResult> {
+export async function updateUserRole(id: number, role: "user" | "admin" | "public"): Promise<AuthResult> {
   const db = await getDb();
   if (!db) return { success: false, error: "Banco de dados indisponível" };
 
@@ -205,7 +209,7 @@ export async function updateUserRole(id: number, role: "user" | "admin"): Promis
     return { success: false, error: "O administrador principal não pode ser rebaixado" };
   }
 
-  await db.update(users).set({ role }).where(eq(users.id, id));
+  await db.update(users).set({ role, sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, id));
   return { success: true };
 }
 
@@ -227,7 +231,7 @@ export async function adminResetPassword(id: number, newPassword: string): Promi
   if (target.length === 0) return { success: false, error: "Usuário não encontrado" };
 
   const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
-  await db.update(users).set({ passwordHash }).where(eq(users.id, id));
+  await db.update(users).set({ passwordHash, sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, id));
   return { success: true };
 }
 
@@ -336,6 +340,7 @@ export async function resetPassword(token: string, newPassword: string): Promise
     // Update password and clear token
     await db.update(users).set({
       passwordHash,
+      sessionVersion: sql`${users.sessionVersion} + 1`,
       resetPasswordToken: null,
       resetPasswordExpires: null,
     }).where(eq(users.id, user.id));
@@ -380,11 +385,30 @@ export async function changePassword(userId: number, currentPassword: string, ne
     // Hash new password
     const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
 
-    await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+    await db.update(users).set({ passwordHash, sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, userId));
 
     return { success: true, user };
   } catch (error) {
     console.error("[AuthService] Change password error:", error);
     return { success: false, error: "Erro ao alterar senha" };
   }
+}
+
+export async function setApproval(actorId: number, id: number, status: "approved" | "rejected") {
+  const db = await getDb();
+  if (!db) throw new Error("Banco indisponível");
+  const target = await getUserById(id);
+  if (!target || target.role !== "public") throw new Error("Cadastro público não encontrado");
+  await audit(actorId, `user.approval:${id}`, status);
+  await db.update(users).set({ approvalStatus: status, sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, id));
+}
+export async function revokeSessions(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Banco indisponível");
+  await db.update(users).set({ sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, id));
+}
+export async function updateProfile(id: number, name: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Banco indisponível");
+  await db.update(users).set({ name }).where(eq(users.id, id));
 }

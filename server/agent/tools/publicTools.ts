@@ -1,0 +1,63 @@
+import { z } from "zod";
+import { defineSchema, type AgentTool } from "./types";
+import { getUserById } from "../../services/authService";
+import { requireApproved } from "../../security/policy";
+import {
+  getOwnOperation,
+  listOwnOperations,
+  createOwnOperation,
+} from "../../services/publicOperations";
+import { calcularCubagemTool } from "./calcularCubagem";
+export const PUBLIC_TOOLS: AgentTool[] = [
+  calcularCubagemTool,
+  {
+    name: "consultar_minhas_operacoes",
+    schema: defineSchema(
+      "consultar_minhas_operacoes",
+      "Consulta exclusivamente operações próprias, status, marcos, prazos e histórico público.",
+      {
+        type: "object",
+        properties: { id: { type: "integer", minimum: 1 } },
+        additionalProperties: false,
+      },
+    ),
+    async run(args, ctx) {
+      const input = z
+        .object({ id: z.number().int().positive().optional() })
+        .strict()
+        .parse(args);
+      const user = await getUserById(ctx.userId);
+      requireApproved(user);
+      const data = input.id
+        ? await getOwnOperation(user!, input.id)
+        : await listOwnOperations(user!);
+      return { ok: true, summary: "Acompanhamento das suas operações.", data };
+    },
+  },
+  {
+    name: "criar_minha_operacao",
+    schema: defineSchema(
+      "criar_minha_operacao",
+      "Cria uma operação própria no estágio inicial, somente quando o usuário solicitar expressamente.",
+      {
+        type: "object",
+        properties: { titulo: { type: "string", maxLength: 255 } },
+        required: ["titulo"],
+        additionalProperties: false,
+      },
+    ),
+    async run(args, ctx) {
+      const input = z
+        .object({ titulo: z.string().trim().min(1).max(255) })
+        .strict()
+        .parse(args);
+      const user = await getUserById(ctx.userId);
+      requireApproved(user);
+      return {
+        ok: true,
+        summary: "Operação criada para acompanhamento.",
+        data: await createOwnOperation(user!, input.titulo),
+      };
+    },
+  },
+];

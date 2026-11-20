@@ -115,7 +115,7 @@ export default function Login() {
               )}
             </Button>
             <p className="text-xs text-muted-foreground text-center">
-              O acesso é criado pelo administrador. Solicite suas credenciais ao administrador do sistema.
+              Ainda não tem acesso? <Link href="/register" className="text-primary underline">Solicitar cadastro</Link>. A liberação depende de aprovação administrativa.
             </p>
           </CardFooter>
         </form>

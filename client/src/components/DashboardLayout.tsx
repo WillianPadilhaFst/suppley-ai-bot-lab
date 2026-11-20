@@ -114,7 +114,12 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeMenuItem = menuItems.find(item => item.path === location);
+  const visibleItems = user?.role === 'public' ? [
+    {icon:OrbitalIcon,label:'Excambia',path:'/excambia',section:'inteligencia'},
+    {icon:Workflow,label:'Acompanhamento',path:'/operacoes',section:'operacoes'},
+    {icon:Settings,label:'Minha conta',path:'/minha-conta',section:'operacoes'},
+  ] : menuItems;
+  const activeMenuItem = visibleItems.find(item => item.path === location);
   const isMobile = useIsMobile();
 
   // Foco no chat: ao ENTRAR na Excambia, a navegação retrai sozinha (modo ícone),
@@ -217,7 +222,7 @@ function DashboardLayoutContent({
               )}
             </div>
             <SidebarMenu className="px-2 py-1 shrink-0">
-              {menuItems.filter(i => i.section === "inteligencia").map(item => {
+              {visibleItems.filter(i => i.section === "inteligencia").map(item => {
                 const isActive = location === item.path;
                 return (
                   <SidebarMenuItem key={item.path}>
@@ -253,7 +258,7 @@ function DashboardLayoutContent({
               )}
             </div>
             <SidebarMenu className="px-2 py-1 shrink-0">
-              {menuItems.filter(i => i.section === "operacoes").map(item => {
+              {visibleItems.filter(i => i.section === "operacoes").map(item => {
                 const isActive = location === item.path;
                 return (
                   <SidebarMenuItem key={item.path}>
@@ -284,12 +289,12 @@ function DashboardLayoutContent({
             <div className="px-4 mt-6 mb-2 shrink-0">
               {!isCollapsed && (
                 <span className="text-[10px] font-semibold text-[#28E7C5] uppercase tracking-wider">
-                  Base
+                  {user?.role === "public" ? "" : "Base"}
                 </span>
               )}
             </div>
             <SidebarMenu className="px-2 py-1 shrink-0">
-              {menuItems.filter(i => i.section === "base").map(item => {
+              {visibleItems.filter(i => i.section === "base").map(item => {
                 const isActive = location === item.path;
                 return (
                   <SidebarMenuItem key={item.path}>
@@ -337,11 +342,11 @@ function DashboardLayoutContent({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem
-                  onClick={() => setLocation("/settings")}
+                  onClick={() => setLocation(user?.role === "public" ? "/minha-conta" : "/settings")}
                   className="cursor-pointer"
                 >
                   <Settings className="mr-2 h-4 w-4" />
-                  <span>Configurações</span>
+                  <span>{user?.role === "public" ? "Minha conta" : "Configurações"}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={logout}

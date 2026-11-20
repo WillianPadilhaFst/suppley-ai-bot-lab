@@ -1,3 +1,6 @@
+import { resolveSession } from "../security/session";
+import { chatInput, validateChat } from "../security/chatInput";
+import { runPublicChat } from "../agent/publicChat";
 import { Router, Request, Response } from "express";
 import { jwtVerify } from "jose";
 import * as conversaDb from "../db/conversaDb";
@@ -8,55 +11,6 @@ import { applyAttachmentToMessages, attachmentMarker, type AttachmentRef } from 
 import type { Message } from "../_core/llm";
 
 const router = Router();
-
-// Mesmo secret e cookie do context.ts (autenticação tRPC) — manter sincronizado.
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "suppley-calc-secret-key-2024"
-);
-const SESSION_COOKIE = "suppley_session";
-
-interface StreamPayload {
-  conversaId: number;
-  messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
-  operacaoId?: number;
-  estagio?: string;
-  attachment?: AttachmentRef;
-}
-
-async function verifySessionToken(token: string): Promise<number | null> {
-  try {
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    return (payload.userId as number) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/** Lê o cookie de sessão direto do header (não há cookie-parser registrado). */
-function readSessionCookie(req: Request): string | null {
-  const raw = req.headers.cookie;
-  if (!raw) return null;
-  for (const part of raw.split(";")) {
-    const [name, ...rest] = part.trim().split("=");
-    if (name === SESSION_COOKIE) return decodeURIComponent(rest.join("="));
-  }
-  return null;
-}
-
-/** Resolve o usuário do request: Authorization Bearer (fallback) ou cookie de sessão. */
-async function resolveUserId(req: Request): Promise<number | null> {
-  const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith("Bearer ")) {
-    const userId = await verifySessionToken(authHeader.slice(7));
-    if (userId) return userId;
-  }
-  const cookieToken = readSessionCookie(req);
-  if (cookieToken) {
-    const userId = await verifySessionToken(cookieToken);
-    if (userId) return userId;
-  }
-  return null;
-}
 
 /**
  * Traduz o erro técnico (geralmente da API da Anthropic) numa mensagem clara e
@@ -87,36 +41,20 @@ function diagnoseError(err: unknown): string {
 
 router.post("/api/chat/stream", async (req: Request, res: Response) => {
   try {
-    const userId = await resolveUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: "Unauthorized" });
+    const user = await resolveSession(req);
+    if (!user) { res.status(401).json({error:'Unauthorized'}); return; }
+    const parsed = chatInput.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({error:'Mensagem inválida.'}); return; }
+    const payload = await validateChat(user, parsed.data);
+    if (user.role === 'public') {
+      await conversaDb.addMessage(payload.conversaId,'user',payload.messages.at(-1)!.content);
+      const result = await runPublicChat(user,payload.messages);
+      await conversaDb.addMessage(payload.conversaId,'assistant',result.reply,result.toolsUsed,result.toolResults);
+      res.setHeader('Content-Type','text/event-stream');
+      res.setHeader('Cache-Control','no-store');
+      res.end(`data: ${JSON.stringify({type:'reply',...result})}\n\ndata: {"type":"done"}\n\n`);
       return;
     }
-
-    // Confirma que o usuário existe (espelha o context.ts).
-    const user = await getUserById(userId);
-    if (!user) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-
-    const payload: StreamPayload = req.body;
-    if (!payload?.conversaId || !Array.isArray(payload.messages)) {
-      res.status(400).json({ error: "Missing conversaId or messages" });
-      return;
-    }
-
-    // POSSE DA CONVERSA (obrigatório): o conversaId vem do corpo da requisição.
-    // Sem esta checagem, um usuário autenticado grava mensagens — e faz a
-    // Excambia responder — dentro da thread de OUTRO usuário. Todo o resto da
-    // rota escreve usando este id, então a validação vem antes de qualquer
-    // gravação.
-    const daPessoa = await conversaDb.conversaPertenceAoUsuario(payload.conversaId, user.id);
-    if (!daPessoa) {
-      res.status(404).json({ error: "Conversa não encontrada" });
-      return;
-    }
-
     // Adiciona mensagem do usuário ao histórico (com marcador do anexo, sem emoji)
     const userMsg = payload.messages[payload.messages.length - 1];
     if (userMsg?.role === "user") {
@@ -210,7 +148,8 @@ router.post("/api/chat/stream", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[chatStream] erro geral:", err);
     if (!res.headersSent) {
-      res.status(500).json({ error: "Internal server error" });
+      const code=(err as {code?:string}).code;
+      res.status(code==='TOO_MANY_REQUESTS'?429:code==='NOT_FOUND'?404:code==='FORBIDDEN'?403:500).json({error:'Não foi possível processar a solicitação.'});
     } else {
       res.end();
     }

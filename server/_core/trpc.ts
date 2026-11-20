@@ -3,12 +3,25 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
 
+import { authorizePath } from "../security/policy";
+import { audit, consumeLimit } from "../security/abuse";
+
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
 });
 
 export const router = t.router;
-export const publicProcedure = t.procedure;
+const baseProcedure = t.procedure.use(async ({ ctx, path, next }) => {
+  try { authorizePath(ctx.user, path); } catch (e) {
+    await audit(ctx.user?.id ?? null, path, "denied"); throw e;
+  }
+  if (path.startsWith("auth.") && path !== "auth.me" && path !== "auth.logout") {
+    await consumeLimit(`auth:${ctx.req.ip ?? "unknown"}`, 20, 60000);
+  }
+  if (ctx.user?.role === "public") await consumeLimit(`api:${ctx.user.id}`, 120, 60000);
+  return next();
+});
+export const publicProcedure = baseProcedure;
 
 const requireUser = t.middleware(async opts => {
   const { ctx, next } = opts;
@@ -25,9 +38,9 @@ const requireUser = t.middleware(async opts => {
   });
 });
 
-export const protectedProcedure = t.procedure.use(requireUser);
+export const protectedProcedure = baseProcedure.use(requireUser);
 
-export const adminProcedure = t.procedure.use(
+export const adminProcedure = baseProcedure.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;
 

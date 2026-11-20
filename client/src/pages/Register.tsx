@@ -19,13 +19,8 @@ export default function Register() {
 
   const registerMutation = trpc.auth.register.useMutation({
     onSuccess: (data) => {
-      // Save token to localStorage for Safari iOS fallback
-      if (data.token) {
-        setStoredToken(data.token);
-      }
-      toast.success("Conta criada com sucesso!");
-      // Novo usuário entra direto na Excambia (cérebro do sistema).
-      setLocation("/excambia");
+      toast.success("Cadastro recebido. Aguarde a aprovação administrativa para entrar.");
+      setLocation("/login");
     },
     onError: (error) => {
       toast.error(error.message || "Erro ao criar conta");
@@ -63,7 +58,7 @@ export default function Register() {
           </div>
           <CardTitle className="text-2xl">Criar Conta</CardTitle>
           <CardDescription>
-            Registre-se para acessar a calculadora de importação
+            Solicite acesso à Excambia e ao acompanhamento. Seu cadastro será analisado por um administrador.
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>

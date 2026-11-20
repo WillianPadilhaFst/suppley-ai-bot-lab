@@ -1,3 +1,6 @@
+import { useAuth } from "@/_core/hooks/useAuth";
+import { PublicOperations, PublicOperation, MyAccount } from "./pages/PublicPortal";
+import PublicChat from "./pages/PublicChat";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { lazy, Suspense } from "react";
@@ -49,6 +52,13 @@ function RouteFallback() {
 }
 
 function AuthenticatedRoutes() {
+  const {user,loading}=useAuth();
+  if(loading)return <RouteFallback/>;
+  if(user?.role==='public')return <DashboardLayout><Switch>
+    <Route path="/" component={PublicChat}/><Route path="/excambia" component={PublicChat}/>
+    <Route path="/operacoes" component={PublicOperations}/><Route path="/operacao/:id" component={PublicOperation}/>
+    <Route path="/minha-conta" component={MyAccount}/><Route component={NotFound}/>
+  </Switch></DashboardLayout>;
   return (
     <DashboardLayout>
       <Suspense fallback={<RouteFallback />}>
@@ -64,6 +74,7 @@ function AuthenticatedRoutes() {
         <Route path="/suppliers" component={Marketplace} />
         <Route path="/products" component={Products} />
         <Route path="/settings" component={Settings} />
+        <Route path="/minha-conta" component={MyAccount} />
         <Route path="/excambia" component={ExcambiaChat} />
         <Route path="/industries" component={Marketplace} />
         <Route path="/industries/:id">{(params: any) => <IndustryDetail id={params.id} />}</Route>

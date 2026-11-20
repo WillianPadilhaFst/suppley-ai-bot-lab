@@ -1,3 +1,4 @@
+import { portalRouter } from "./routers/portalRouter";
 import { router } from "./_core/trpc";
 import { systemRouter } from "./_core/systemRouter";
 import { authRouter } from "./routers/authRouter";
@@ -33,6 +34,7 @@ import { usageRouter } from "./routers/usageRouter";
 import { usersRouter } from "./routers/usersRouter";
 
 export const appRouter = router({
+  portal: portalRouter,
   system: systemRouter,
   auth: authRouter,
   exchange: exchangeRouter,
