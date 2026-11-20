@@ -433,6 +433,8 @@ curl http://localhost:3000
 
 #### 5. Reverse Proxy (Nginx)
 
+> **Alerta crítico de 18/11/2026:** o exemplo abaixo deixa HTTP/2 desativado para reduzir a exposição às falhas CVE-2026-123007 e CVE-2026-123633. A configuração real do servidor não está versionada neste repositório. Alterar este documento **não altera a Droplet**. Antes de qualquer reload, faça backup e rode `nginx -t`. Consulte [SECURITY_NGINX_2026-11.md](./SECURITY_NGINX_2026-11.md) para auditoria, aplicação assistida e rollback. Atualizar o pacote NGINX corrigido continua obrigatório; desativar HTTP/2 não corrige os demais CVEs da divulgação.
+
 ```nginx
 # /etc/nginx/sites-available/suppley
 
@@ -445,7 +447,7 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl; # HTTP/2 temporariamente desativado (CVE-2026-123007/123633)
     server_name seu-dominio.com;
 
     # SSL (usando Let's Encrypt / Certbot)
