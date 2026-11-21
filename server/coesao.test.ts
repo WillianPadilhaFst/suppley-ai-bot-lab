@@ -13,6 +13,8 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+vi.mock('./services/authService',()=>({getUserById:vi.fn(async()=>({id:1,role:'user',approvalStatus:'approved'}))}));
+vi.mock('./security/abuse',()=>({audit:vi.fn(async()=>{}),consumeLimit:vi.fn(async()=>{})}));
 // Evita inicialização real do banco ao importar o serviço/rotas.
 vi.mock("./db", () => ({ getDb: vi.fn(async () => null) }));
 

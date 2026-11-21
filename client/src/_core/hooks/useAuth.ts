@@ -1,3 +1,4 @@
+import { setStoredToken } from "@/lib/authToken";
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
@@ -36,6 +37,8 @@ export function useAuth(options?: UseAuthOptions) {
       }
       throw error;
     } finally {
+      setStoredToken(null);
+      utils.invalidate();
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
     }

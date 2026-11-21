@@ -1,14 +1,10 @@
 name: Test & Build
-
 on:
-  push:
-    branches: [main, development, claude/manus-migration-independent-*, security/**]
   pull_request:
-    branches: [main, development, claude/manus-migration-independent-*, security/**]
-
+  push:
+    branches: [main, development, development/public-access-mcp, release/public-chat, claude/manus-migration-independent-*]
 permissions:
   contents: read
-
 jobs:
   docker-smoke:
     runs-on: ubuntu-latest
@@ -37,76 +33,49 @@ jobs:
         run: docker rm -f suppley-ci || true
 
   test-and-build:
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [22.x]
-
-    env:
-      NODE_ENV: test
-      DATABASE_URL: mysql://root:root@localhost:3306/suppley_calc_test
-      JWT_SECRET: 0123456789abcdef0123456789abcdef
-      ANTHROPIC_API_KEY: dummy-for-ci
-
+    runs-on: ubuntu-24.04
     services:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: root
+          MYSQL_ROOT_PASSWORD: test-only
           MYSQL_DATABASE: suppley_calc_test
+        ports: ['3306:3306']
         options: >-
-          --health-cmd="mysqladmin ping"
+          --health-cmd="mysqladmin ping -ptest-only"
           --health-interval=10s
           --health-timeout=5s
-          --health-retries=3
-        ports:
-          - 3306:3306
-
+          --health-retries=10
+    env:
+      DATABASE_URL: mysql://root:test-only@127.0.0.1:3306/suppley_calc_test
+      TEST_DATABASE_URL: mysql://root:test-only@127.0.0.1:3306/suppley_calc_test
+      JWT_SECRET: ci-only-signing-key-at-least-32-characters
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
           persist-credentials: false
-
       - uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Prepare test database
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Initialize disposable test schema
         run: pnpm exec drizzle-kit push --force
-
-      - name: Type check
-        run: pnpm check
-
-      - name: Run tests
-        run: pnpm test --run
-
-      - name: Build
-        run: pnpm build
-        env:
-          VITE_APP_ID: test-app
-          VITE_OAUTH_PORTAL_URL: ""
-          NODE_ENV: production
-
-      - name: Upload build artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-${{ github.sha }}
-          path: dist/
-          retention-days: 5
-
-      - name: Record failure in job summary
-        if: failure()
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm build
+      - name: Install isolated browser test runtime
         run: |
-          echo "## ❌ Test & Build falhou" >> "$GITHUB_STEP_SUMMARY"
-          echo "Consulte os logs desta execução para identificar o passo que falhou." >> "$GITHUB_STEP_SUMMARY"
+          npm install --prefix /tmp/suppley-browser --no-save playwright@1.56.1
+          /tmp/suppley-browser/node_modules/.bin/playwright install --with-deps chromium
+      - name: Public portal desktop and mobile smoke
+        run: node scripts/public-portal-smoke.mjs
+        env:
+          SUPPLEY_PLAYWRIGHT_DIR: /tmp/suppley-browser/node_modules/playwright
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: public-portal-screenshots
+          path: artifacts/public-portal/
+          if-no-files-found: ignore

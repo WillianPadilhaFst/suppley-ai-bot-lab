@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+vi.mock("./services/authService", async (original) => ({...await original<typeof import("./services/authService")>(), revokeSessions:vi.fn(async()=>{})}));
+import { describe, expect, it, vi } from "vitest";
 import { appRouter } from "./routers";
 import { COOKIE_NAME } from "../shared/const";
 import type { TrpcContext } from "./_core/context";

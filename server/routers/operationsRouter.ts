@@ -1,3 +1,17 @@
+import { TRPCError } from '@trpc/server';
+import { and, eq } from 'drizzle-orm';
+import { getDb } from '../db/connection';
+import { quotations, importCalculations } from '../../drizzle/schema';
+async function assertInternalOperation(user: {id:number;role:string}, id:number) {
+  const op = await svc.getOperacao(user.id,id,user.role==='admin');
+  if(!op) throw new TRPCError({code:'NOT_FOUND'});
+}
+async function assertReference(user:{id:number;role:string},id:number,kind:'quotation'|'calculation') {
+  const db=await getDb(); if(!db)throw new TRPCError({code:'SERVICE_UNAVAILABLE'});
+  const table=kind==='quotation'?quotations:importCalculations;
+  const [row]=await db.select({id:table.id}).from(table).where(and(eq(table.id,id),user.role==='admin'?undefined:eq(table.userId,user.id))).limit(1);
+  if(!row)throw new TRPCError({code:'NOT_FOUND'});
+}
 /**
  * Operations Router — endpoints da entidade Operação.
  *
@@ -53,7 +67,11 @@ export const operationsRouter = router({
 
   linkQuotation: protectedProcedure
     .input(z.object({ operacaoId: z.number(), quotationId: z.number() }))
-    .mutation(({ input }) => svc.linkQuotation(input.operacaoId, input.quotationId)),
+    .mutation(async ({ ctx, input }) => {
+      await assertInternalOperation(ctx.user,input.operacaoId);
+      await assertReference(ctx.user,input.quotationId,'quotation');
+      return svc.linkQuotation(input.operacaoId,input.quotationId);
+    }),
 
   linkCalculation: protectedProcedure
     .input(z.object({
@@ -62,10 +80,11 @@ export const operationsRouter = router({
       valorBrlCents: z.number().optional(),
       margemBp: z.number().optional(),
     }))
-    .mutation(({ input }) =>
-      svc.linkCalculation(input.operacaoId, input.calculationId, {
-        valorBrlCents: input.valorBrlCents, margemBp: input.margemBp,
-      })),
+    .mutation(async ({ctx,input}) => {
+      await assertInternalOperation(ctx.user,input.operacaoId);
+      await assertReference(ctx.user,input.calculationId,'calculation');
+      return svc.linkCalculation(input.operacaoId,input.calculationId,{valorBrlCents:input.valorBrlCents,margemBp:input.margemBp});
+    }),
 
   /**
    * BIFURCAÇÃO PÓS-CÁLCULO — "Enviar para Operações".
@@ -162,7 +181,7 @@ export const operationsRouter = router({
       titulo: z.string().optional(),
       payload: z.unknown().optional(),
     }))
-    .mutation(({ input }) => svc.addEvento({ ...input } as any)),
+    .mutation(async ({ctx,input}) => {await assertInternalOperation(ctx.user,input.operacaoId); return svc.addEvento({...input} as any);}),
 
   // Atualiza metadados de planejamento (prioridade, prazo, cliente, etc.)
   update: protectedProcedure

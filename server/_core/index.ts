@@ -1,3 +1,4 @@
+import { consumeLimit } from "../security/abuse";
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
@@ -40,6 +41,15 @@ async function startServer() {
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
   });
+  app.use(['/api/trpc', '/api/chat/stream'], async (req, res, next) => {
+    try {
+      if (req.headers.origin && req.headers.origin !== new URL(process.env.APP_URL || `${req.protocol}://${req.get('host')}`).origin) {res.sendStatus(403);return;}
+      if (['POST','PUT','PATCH'].includes(req.method) && !req.is('application/json')) {res.sendStatus(415);return;}
+      await consumeLimit(`http:${req.ip ?? 'unknown'}`, 300, 60000);
+      next();
+    } catch {res.sendStatus(429);}
+  });
+  app.use('/api/chat/stream', express.json({limit:'128kb'}));
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));

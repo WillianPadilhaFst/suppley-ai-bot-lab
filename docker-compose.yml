@@ -16,6 +16,7 @@ services:
       DATABASE_URL: mysql://${DB_USER:-suppley}:${DB_PASSWORD:?DB_PASSWORD must be set}@db:3306/${DB_NAME:-suppley_calc}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       PORT: 3000
+      APP_URL: ${APP_URL:-}
       # IA (Anthropic Claude) — essencial para a Excambia responder
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # Inteligência de mercado (opcionais; sem elas o app usa só BCB/IBGE/web)
