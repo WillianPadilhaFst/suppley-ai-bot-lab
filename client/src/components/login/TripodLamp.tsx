@@ -874,12 +874,8 @@ export const TripodLamp: React.FC<TripodLampProps> = ({ isLit, onToggle }) => {
             onClick={(event) => {
               if (event.detail === 0) triggerToggle();
             }}
-            aria-label={
-              isLit
-                ? "Puxar corda para apagar a luz"
-                : "Puxar corda para acender a luz"
-            }
-            aria-pressed={isLit}
+            aria-label={isLit ? "Fechar login" : undefined}
+            aria-expanded={isLit}
             aria-controls="suppley-login-card"
             className="group relative w-full h-full -translate-x-1/2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] rounded-2xl touch-none"
           >
@@ -1110,26 +1106,10 @@ export const TripodLamp: React.FC<TripodLampProps> = ({ isLit, onToggle }) => {
                 </svg>
               </div>
             </div>
+            {!isLit && (
+              <span className="suppley-login__cord-label">Ir para o Login</span>
+            )}
           </button>
-
-          {/* Subtle contextual instruction aligned directly with the pull finial */}
-          <div
-            className="pointer-events-none absolute left-[42%] top-[76%] -translate-y-1/2 whitespace-nowrap hidden lg:flex items-center gap-2 transition-all duration-500"
-            aria-hidden="true"
-          >
-            <span
-              className={`block h-[1px] transition-all duration-500 ${
-                isLit ? "w-4 bg-white/24" : "w-5 bg-[#38BDF8]/55"
-              }`}
-            />
-            <span
-              className={`text-[10px] font-medium tracking-[0.13em] uppercase transition-colors duration-500 ${
-                isLit ? "text-white/44" : "text-[#9CE8FB]/88"
-              }`}
-            >
-              {isLit ? "Puxe para apagar" : "Puxe a corda para acender"}
-            </span>
-          </div>
         </div>
       </div>
     </div>

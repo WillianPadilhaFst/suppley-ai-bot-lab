@@ -31,22 +31,6 @@
   opacity: 1;
 }
 
-.suppley-login__bar {
-  display: flex;
-  width: min(100%, 72rem);
-  margin-inline: auto;
-  padding: 1.8rem clamp(1.25rem, 4vw, 3rem) 0;
-  justify-content: space-between;
-  gap: 0.8rem;
-  color: var(--login-muted);
-  font-size: 0.75rem;
-}
-
-.suppley-login__footer {
-  margin-top: auto;
-  padding-block: 0 1.5rem;
-}
-
 .suppley-login__stage {
   display: flex;
   width: min(100%, 66rem);
@@ -64,28 +48,34 @@
   display: grid;
   justify-items: center;
 }
-.suppley-login__intro {
-  z-index: 1;
-  text-align: center;
-}
-.suppley-login__intro p {
-  margin: 0 0 0.7rem;
-  color: var(--login-muted);
-  font-size: 0.825rem;
-}
-.suppley-login__intro button {
+.suppley-login__cord-label {
+  position: absolute;
+  top: 76%;
+  left: calc(100% + 2px);
   display: inline-flex;
   min-height: 44px;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.55rem 1rem;
-  border: 1px solid #5a5373;
-  border-radius: 0.75rem;
+  gap: 0.4rem;
+  transform: translateY(-50%);
+  white-space: nowrap;
   color: var(--login-accent);
+  font-size: 0.8rem;
+  font-weight: 550;
   cursor: pointer;
 }
-.suppley-login__intro button:hover {
-  background: #211a35;
+
+.suppley-login__cord-label::before {
+  width: clamp(0.5rem, 1.4vw, 1.15rem);
+  height: 1px;
+  background: currentColor;
+  opacity: 0.65;
+  content: "";
+}
+
+.suppley-login button:hover .suppley-login__cord-label,
+.suppley-login button:focus-visible .suppley-login__cord-label {
+  text-decoration: underline;
+  text-underline-offset: 0.22em;
 }
 
 .suppley-login__card {
@@ -265,9 +255,6 @@
   .suppley-login__stage {
     flex-direction: row;
     gap: clamp(4rem, 9vw, 8rem);
-  }
-  .suppley-login__intro p {
-    display: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {
