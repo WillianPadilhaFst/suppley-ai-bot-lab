@@ -1,3 +1,5 @@
+import { sessionSecret } from "../security/session";
+import { requireApproved } from "../security/policy";
 import { AXIOS_TIMEOUT_MS, COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
 import axios, { type AxiosInstance } from "axios";
@@ -22,6 +24,7 @@ export type SessionPayload = {
   openId: string;
   appId: string;
   name: string;
+  sv?: number;
 };
 
 const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
@@ -155,8 +158,7 @@ class SDKServer {
   }
 
   private getSessionSecret() {
-    const secret = ENV.cookieSecret;
-    return new TextEncoder().encode(secret);
+    return sessionSecret();
   }
 
   /**
@@ -168,9 +170,12 @@ class SDKServer {
     openId: string,
     options: { expiresInMs?: number; name?: string } = {}
   ): Promise<string> {
+    const user = await db.getUserByOpenId(openId);
+    requireApproved(user);
     return this.signSession(
       {
         openId,
+        sv: user!.sessionVersion,
         appId: ENV.appId,
         name: options.name || "",
       },
@@ -189,6 +194,7 @@ class SDKServer {
 
     return new SignJWT({
       openId: payload.openId,
+      sv: payload.sv ?? 0,
       appId: payload.appId,
       name: payload.name,
     })
@@ -199,7 +205,7 @@ class SDKServer {
 
   async verifySession(
     cookieValue: string | undefined | null
-  ): Promise<{ openId: string; appId: string; name: string } | null> {
+  ): Promise<{ openId: string; appId: string; name: string; sv: number } | null> {
     if (!cookieValue) {
       console.warn("[Auth] Missing session cookie");
       return null;
@@ -222,6 +228,7 @@ class SDKServer {
       }
 
       return {
+        sv: typeof payload.sv === "number" ? payload.sv : 0,
         openId,
         appId,
         name,
@@ -292,6 +299,8 @@ class SDKServer {
       throw ForbiddenError("User not found");
     }
 
+    requireApproved(user);
+    if (session.sv !== user.sessionVersion) throw ForbiddenError("Revoked session");
     await db.upsertUser({
       openId: user.openId,
       lastSignedIn: signedInAt,

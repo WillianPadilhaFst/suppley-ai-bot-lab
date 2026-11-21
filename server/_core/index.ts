@@ -1,3 +1,5 @@
+import { mcpRouter } from "../mcp/router";
+import { consumeLimit } from "../security/abuse";
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
@@ -33,6 +35,17 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  app.use('/api', async (req, res, next) => {
+    try {
+      if (req.headers.origin && req.headers.origin !== new URL(process.env.APP_URL || `${req.protocol}://${req.get('host')}`).origin) {res.sendStatus(403);return;}
+      if (['POST','PUT','PATCH'].includes(req.method) && !req.is('application/json')) {res.sendStatus(415);return;}
+      await consumeLimit(`http:${req.ip ?? 'unknown'}`, 300, 60000);
+      next();
+    } catch {res.sendStatus(429);}
+  });
+  app.use('/mcp', express.json({limit:'64kb'}));
+  app.use(mcpRouter);
+  app.use('/api/chat/stream', express.json({limit:'128kb'}));
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));

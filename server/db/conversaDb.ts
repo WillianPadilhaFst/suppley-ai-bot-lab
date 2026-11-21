@@ -1,3 +1,5 @@
+import { getOwnOperation } from "../services/publicOperations";
+import { getUserById } from "../services/authService";
 /**
  * Operações de banco de dados para CONVERSAS da Excambia.
  * Camada de abstração sobre Drizzle — torna conversasRouter agnóstico ao banco.
@@ -113,6 +115,10 @@ export async function createConversa(
   const db = await getDb();
   if (!db) throw new Error("Banco de dados indisponível");
 
+  if (input.operacaoId) {
+    const user = await getUserById(userId); if (!user) throw new Error('Unauthorized');
+    await getOwnOperation(user, input.operacaoId);
+  }
   const values = {
     userId,
     titulo: input.titulo || "Nova conversa",
@@ -245,6 +251,8 @@ export async function linkConversaToOperacao(
   operacaoId: number | null,
   estagio?: EstagioConversa
 ) {
+  const user = await getUserById(userId); if (!user) throw new Error('Unauthorized');
+  if (operacaoId) await getOwnOperation(user, operacaoId);
   const db = await getDb();
   if (!db) return null;
 

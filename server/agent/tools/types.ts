@@ -20,6 +20,8 @@ export interface AnexoTurno {
 /** Contexto passado a toda execução de tool — quem está pedindo e em qual operação. */
 export interface ToolContext {
   userId: number;
+  /** Owned conversation ID supplied by the server, never the model. */
+  conversaId?: number;
   operacaoId?: number;        // se a conversa está dentro de uma operação
   estagio?: string;           // estágio atual (demand|source|analyze|execute|finance)
   /**

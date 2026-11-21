@@ -7,9 +7,10 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { adminProcedure, router } from "../_core/trpc";
-import { listUsers, adminCreateUser, updateUserRole, deleteUser, adminResetPassword } from "../services/authService";
+import { listUsers, adminCreateUser, updateUserRole, deleteUser, adminResetPassword, setApproval } from "../services/authService";
 
 export const usersRouter = router({
+  approve: adminProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["approved", "rejected"]) })).mutation(async ({ctx, input}) => { await setApproval(ctx.user.id, input.id, input.status); return { success: true }; }),
   list: adminProcedure.query(() => listUsers()),
 
   create: adminProcedure
@@ -18,7 +19,7 @@ export const usersRouter = router({
         name: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
         email: z.string().email("Email inválido"),
         password: z.string().min(8, "Senha deve ter pelo menos 8 caracteres"),
-        role: z.enum(["user", "admin"]).default("user"),
+        role: z.enum(["user", "admin", "public"]).default("user"),
       }),
     )
     .mutation(async ({ input }) => {
@@ -41,7 +42,7 @@ export const usersRouter = router({
     }),
 
   updateRole: adminProcedure
-    .input(z.object({ id: z.number().int().positive(), role: z.enum(["user", "admin"]) }))
+    .input(z.object({ id: z.number().int().positive(), role: z.enum(["user", "admin", "public"]) }))
     .mutation(async ({ input, ctx }) => {
       if (input.id === ctx.user.id) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Você não pode alterar o próprio papel" });
