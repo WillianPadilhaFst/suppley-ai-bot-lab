@@ -48,26 +48,28 @@ try {
    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(output)});
   });
   await page.goto(`${base}/login`);
-  await page.getByRole('button',{name:'Ir para o login'}).waitFor();
+  const cord=page.getByRole('button',{name:'Ir para o Login',exact:true});
+  await cord.waitFor();
+  assert.equal(await cord.count(),1);
+  assert.equal(await page.getByText(/calculasuppley\.com\.br|Ambiente em espera|Suppley Raw Material|Itajaí, SC|Puxe a corda/).count(),0);
   const heading=page.getByRole('heading',{name:'Entrar',exact:true});
   assert.equal(await heading.isVisible(),false);
   await capture(page,`${name}-login-off`);
   if(name==='desktop'){
-   const cord=page.getByRole('button',{name:'Puxar corda para acender a luz'});
    const bounds=await cord.boundingBox();
    await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);
    await page.mouse.down();
    await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2+25,{steps:5});
    await page.mouse.up();
   }else{
-   await page.getByRole('button',{name:'Ir para o login'}).click();
+   await page.getByText('Ir para o Login',{exact:true}).click();
   }
   await heading.waitFor();
   await capture(page,`${name}-login-on`);
   if(name==='desktop'){
-   await page.getByRole('button',{name:'Puxar corda para apagar a luz'}).press('Enter');
+   await page.getByRole('button',{name:'Fechar login'}).press('Enter');
    await heading.waitFor({state:'hidden'});
-   await page.getByRole('button',{name:'Puxar corda para acender a luz'}).press('Space');
+   await cord.press('Space');
    await heading.waitFor();
   }
   assert.equal(await page.getByRole('link',{name:'Esqueceu a senha?'}).getAttribute('href'),'/forgot-password');

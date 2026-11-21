@@ -50,22 +50,9 @@ export default function Login() {
 
   return (
     <main className="suppley-login" data-lit={isLit}>
-      <header className="suppley-login__bar">
-        <span>calculasuppley.com.br</span>
-        <span>{isLit ? "Ambiente iluminado" : "Ambiente em espera"}</span>
-      </header>
-
       <div className="suppley-login__stage">
         <div className="suppley-login__lamp">
           <TripodLamp isLit={isLit} onToggle={() => setIsLit((lit) => !lit)} />
-          {!isLit && (
-            <div className="suppley-login__intro">
-              <p>Puxe a corda para acender</p>
-              <button type="button" onClick={() => setIsLit(true)}>
-                Ir para o login <ArrowRight aria-hidden="true" size={16} />
-              </button>
-            </div>
-          )}
         </div>
 
         <section
@@ -152,11 +139,6 @@ export default function Login() {
           </div>
         </section>
       </div>
-
-      <footer className="suppley-login__bar suppley-login__footer">
-        <span>Suppley Raw Material</span>
-        <span>Itajaí, SC · Brasil</span>
-      </footer>
     </main>
   );
 }
