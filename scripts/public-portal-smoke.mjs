@@ -57,8 +57,8 @@ try {
   const menu = page.getByRole('navigation',{name:'Menu principal'});
   assert.deepEqual(await menu.getByRole('link').allTextContents(),['Excambia','Acompanhamento','Minha conta']);
   await capture(page,`${name}-chat`);
-  await page.getByRole('button',{name:'Pedir cotação'}).click();
-  assert.match(await page.getByRole('textbox',{name:'Mensagem para Excambia'}).inputValue(),/Quero pedir uma cotação/);
+  await page.getByRole('button',{name:'Estimar custo de importação'}).click();
+  assert.match(await page.getByRole('textbox',{name:'Mensagem para Excambia'}).inputValue(),/Quero estimar o custo para importar/);
   await page.getByRole('textbox',{name:'Mensagem para Excambia'}).fill(example);
   await page.getByRole('button',{name:'Enviar',exact:true}).click();
   await page.getByRole('article').filter({hasText:'Solicitação #3 recebida para análise.'}).waitFor();
