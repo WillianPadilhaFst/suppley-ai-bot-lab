@@ -11,7 +11,7 @@ const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('l
 const base=`http://127.0.0.1:${server.address().port}`;
 const user={id:1,name:'Cliente de homologação',email:'cliente@example.test',role:'public',loginMethod:'email',createdAt:'2026-11-20T00:00:00Z'};
 const operation={id:1,codigo:'OP-TEST-1',titulo:'Cotação de embalagens',status:'ativa',estagioAtual:'demand',prazoDesejado:null,trackingEta:null,criadaEm:null,atualizadaEm:null,milestones:[{id:1,tipo:'Análise de fornecimento',status:'Em andamento',dataReferencia:'2026-11-20',vencimento:null}],history:[{id:2,tipo:'operacao_criada',estagio:'demand',criadoEm:'2026-11-20'}]};
-const allowed=new Set(['auth.me','conversas.list','portal.list','portal.get','quoteRequests.mine','auth.register','conversas.create','conversas.send','conversas.get']);
+const allowed=new Set(['auth.me','auth.login','conversas.list','portal.list','portal.get','quoteRequests.mine','auth.register','conversas.create','conversas.send','conversas.get']);
 const calls=new Set();let browser;
 async function capture(page,name){
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1), `Horizontal overflow on ${name}`);
@@ -22,13 +22,19 @@ try {
  await mkdir('artifacts/public-portal',{recursive:true});
  for(const [name,viewport] of [['desktop',{width:1440,height:1000}],['mobile',{width:390,height:844}]]){
   const context=await browser.newContext({viewport});const page=await context.newPage();
-  let registered=false;let sent=false;
+  let registered=false;let sent=false;let loggedIn=false;
   const example="Quero cotar 1500 embalagens de 500 ml para Navegantes.";
   await page.route('**/api/trpc/**',async route=>{
    const req=route.request();const url=new URL(req.url());const names=decodeURIComponent(url.pathname.split('/api/trpc/')[1]).split(',');
-   const input=JSON.parse(url.searchParams.get('input')??'{}');
+   const input=JSON.parse(req.postData()??url.searchParams.get('input')??'{}');
    const output=names.map((method,index)=>{
     calls.add(method);
+    if(method==='auth.login'){
+     const credentials=input[index]?.json;
+     if(credentials?.email!==user.email||credentials?.password!=='Senha-de-teste-2026')return {error:{json:{message:'Credenciais inválidas',code:-32001,data:{code:'UNAUTHORIZED',httpStatus:401,path:method}}}};
+     loggedIn=true;
+     return {result:{data:{json:{success:true,user}}}};
+    }
     if(method==='auth.register'){registered=true;return {result:{data:{json:{success:true,pendingApproval:true}}}};}
     if(method==='conversas.create')return {result:{data:{json:{id:4}}}};
     if(method==='conversas.send'){sent=true;return {result:{data:{json:{reply:'Solicitação #3 recebida para análise.'}}}};}
@@ -41,6 +47,46 @@ try {
    });
    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(output)});
   });
+  await page.goto(`${base}/login`);
+  await page.getByRole('button',{name:'Ir para o login'}).waitFor();
+  const heading=page.getByRole('heading',{name:'Entrar',exact:true});
+  assert.equal(await heading.isVisible(),false);
+  await capture(page,`${name}-login-off`);
+  if(name==='desktop'){
+   const cord=page.getByRole('button',{name:'Puxar corda para acender a luz'});
+   const bounds=await cord.boundingBox();
+   await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);
+   await page.mouse.down();
+   await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2+25,{steps:5});
+   await page.mouse.up();
+  }else{
+   await page.getByRole('button',{name:'Ir para o login'}).click();
+  }
+  await heading.waitFor();
+  await capture(page,`${name}-login-on`);
+  if(name==='desktop'){
+   await page.getByRole('button',{name:'Puxar corda para apagar a luz'}).press('Enter');
+   await heading.waitFor({state:'hidden'});
+   await page.getByRole('button',{name:'Puxar corda para acender a luz'}).press('Space');
+   await heading.waitFor();
+  }
+  assert.equal(await page.getByRole('link',{name:'Esqueceu a senha?'}).getAttribute('href'),'/forgot-password');
+  assert.equal(await page.getByRole('link',{name:'Solicitar cadastro'}).getAttribute('href'),'/register');
+  await page.getByLabel('E-mail',{exact:true}).fill(user.email);
+  const password=page.getByLabel('Senha',{exact:true});
+  await password.fill('senha-invalida');
+  await page.getByRole('button',{name:'Mostrar senha'}).click();
+  assert.equal(await password.getAttribute('type'),'text');
+  await page.getByRole('button',{name:'Ocultar senha'}).click();
+  assert.equal(await password.getAttribute('type'),'password');
+  await page.getByRole('button',{name:'Entrar',exact:true}).click();
+  await page.getByText('Credenciais inválidas',{exact:true}).waitFor();
+  assert.equal(loggedIn,false);
+  await password.fill('Senha-de-teste-2026');
+  await page.getByRole('button',{name:'Entrar',exact:true}).click();
+  await page.waitForURL('**/excambia');
+  await page.getByRole('heading',{name:'O que você quer importar?'}).waitFor();
+  assert.equal(loggedIn,true);
   await page.goto(`${base}/register`);
   await page.getByRole('heading',{name:'Crie sua conta'}).waitFor();
   await capture(page,`${name}-registration`);
