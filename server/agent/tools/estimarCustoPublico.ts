@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { consultarComexPorNcm } from "../../services/comexStatService";
+import {
+  consultarComexPorNcm,
+  consultarFreteHistoricoComex,
+} from "../../services/comexStatService";
 import { calculateEstimativa } from "../../services/estimativaService";
 import { getPtaxSerie } from "../../services/marketIntelligenceService";
 import { getStateIcmsInternalRate } from "../../services/statePricingService";
@@ -30,7 +33,7 @@ export const estimarCustoPublicoTool: AgentTool = {
   name: "estimar_custo_importacao",
   schema: defineSchema(
     "estimar_custo_importacao",
-    "Consulta o FOB médio histórico do Comex Stat por NCM e calcula o custo estimado quando há dados para o cenário. A média é da categoria fiscal, não de um fornecedor. Os dados logísticos devem vir do cliente ou de premissas que ele aceitou explicitamente.",
+    "Consulta o FOB médio histórico do Comex Stat por NCM e calcula o custo estimado quando há dados para o cenário. A média é da categoria fiscal, não de um fornecedor. Quando o frete não for informado, busca no Comex Stat o frete histórico por NCM, país de origem e modal. País, peso e modal devem vir do cliente ou de premissas aceitas explicitamente.",
     {
       type: "object",
       additionalProperties: false,
@@ -62,7 +65,7 @@ export const estimarCustoPublicoTool: AgentTool = {
         freteUsd: {
           type: "number",
           description:
-            "Frete internacional total em dólares, informado ou aceito explicitamente pelo cliente.",
+            "Frete internacional total em dólares, somente se informado pelo cliente. Omita para consultar a referência histórica.",
         },
         seguroUsd: {
           type: "number",
@@ -102,12 +105,39 @@ export const estimarCustoPublicoTool: AgentTool = {
       paisOrigem,
       ufDesembaraco,
       modal,
-      freteUsd,
+      freteUsd: freteInformadoUsd,
       seguroUsd,
     } = input;
     const icmsInternalRate = ufDesembaraco
       ? getStateIcmsInternalRate(ufDesembaraco)
       : null;
+    const freteHistorico =
+      !freteInformadoUsd && paisOrigem && modal && pesoLiquidoKg
+        ? await consultarFreteHistoricoComex({
+            ncm: input.ncm,
+            paisOrigem,
+            modal,
+          })
+        : null;
+    const freteUsd =
+      freteInformadoUsd ??
+      (freteHistorico && pesoLiquidoKg
+        ? freteHistorico.usdPorKg * pesoLiquidoKg
+        : undefined);
+    const referenciaFrete = freteHistorico && {
+      fonte: "Comex Stat (MDIC), fretes declarados nas importações",
+      tipo: "média histórica por kg líquido",
+      ncm: input.ncm,
+      paisOrigem,
+      modal,
+      pesoLiquidoKg,
+      freteEstimadoUsd: freteUsd,
+      ...freteHistorico,
+    };
+    const dadosMercado = {
+      mercado,
+      ...(referenciaFrete && { referenciaFrete }),
+    };
     if (
       !quantidade ||
       !unidade ||
@@ -116,14 +146,15 @@ export const estimarCustoPublicoTool: AgentTool = {
       !ufDesembaraco ||
       !icmsInternalRate ||
       !modal ||
-      !freteUsd
+      !freteUsd ||
+      !Number.isFinite(freteUsd)
     ) {
       return {
         ok: true,
         summary:
           "Há uma referência FOB para a categoria fiscal. Ainda faltam dados para calcular o custo de importação.",
         data: {
-          mercado,
+          ...dadosMercado,
           ...(pesoLiquidoKg && { fobEstimadoUsd: usdKg * pesoLiquidoKg }),
           dadosFaltantes: [
             !quantidade && "quantidade",
@@ -132,7 +163,8 @@ export const estimarCustoPublicoTool: AgentTool = {
             !paisOrigem && "país de origem",
             !icmsInternalRate && "UF de desembaraço válida",
             !modal && "modal",
-            !freteUsd && "referência de frete internacional em USD",
+            (!freteUsd || !Number.isFinite(freteUsd)) &&
+              "referência de frete internacional em USD",
           ].filter(Boolean),
         },
       };
@@ -145,8 +177,8 @@ export const estimarCustoPublicoTool: AgentTool = {
       return {
         ok: false,
         summary:
-          "A PTAX do Banco Central está indisponível. É possível informar apenas a referência FOB.",
-        data: { mercado },
+          "A PTAX do Banco Central está indisponível. É possível informar as referências de mercado disponíveis.",
+        data: dadosMercado,
       };
 
     const resultado = await calculateEstimativa({
@@ -182,8 +214,8 @@ export const estimarCustoPublicoTool: AgentTool = {
       return {
         ok: false,
         summary:
-          "O cenário precisa de validação fiscal pela equipe Suppley. Apresente somente a referência FOB de mercado.",
-        data: { mercado },
+          "O cenário precisa de validação fiscal pela equipe Suppley. Apresente as referências de mercado disponíveis.",
+        data: dadosMercado,
       };
     }
 
@@ -192,8 +224,8 @@ export const estimarCustoPublicoTool: AgentTool = {
       return {
         ok: false,
         summary:
-          "O motor não retornou um custo utilizável. Apresente somente a referência FOB de mercado.",
-        data: { mercado },
+          "O motor não retornou um custo utilizável. Apresente as referências de mercado disponíveis.",
+        data: dadosMercado,
       };
     }
     return {
@@ -201,7 +233,7 @@ export const estimarCustoPublicoTool: AgentTool = {
       summary:
         "Custo estimado de importação para as premissas informadas, antes de despesas locais e do serviço da Suppley.",
       data: {
-        mercado,
+        ...dadosMercado,
         custoEstimadoBrl: total,
         custoPorUnidadeBrl: total / quantidade,
         premissas: {
@@ -212,6 +244,9 @@ export const estimarCustoPublicoTool: AgentTool = {
           ufDesembaraco,
           modal,
           freteUsd,
+          origemFrete: freteInformadoUsd
+            ? "informado pelo cliente"
+            : "histórico Comex Stat",
           seguroUsd,
           ptax,
           beneficioFiscal: false,

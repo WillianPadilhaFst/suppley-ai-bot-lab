@@ -3,11 +3,13 @@ import { estimarCustoPublicoTool } from "./estimarCustoPublico";
 
 const mocks = vi.hoisted(() => ({
   comex: vi.fn(),
+  freteHistorico: vi.fn(),
   ptax: vi.fn(),
   estimativa: vi.fn(),
 }));
 vi.mock("../../services/comexStatService", () => ({
   consultarComexPorNcm: mocks.comex,
+  consultarFreteHistoricoComex: mocks.freteHistorico,
 }));
 vi.mock("../../services/marketIntelligenceService", () => ({
   getPtaxSerie: mocks.ptax,
@@ -35,6 +37,7 @@ beforeEach(() => {
     precoMedioUsdKg: 4,
     janelaMeses: 12,
   });
+  mocks.freteHistorico.mockResolvedValue(null);
   mocks.ptax.mockResolvedValue([{ data: "2026-11-20", valor: 5.8 }]);
   mocks.estimativa.mockResolvedValue({
     ncmWarnings: [],
@@ -56,9 +59,38 @@ describe("estimativa pública de importação", () => {
     expect(mocks.estimativa).not.toHaveBeenCalled();
   });
 
+  it("usa a referência de mercado quando o cliente omite o frete", async () => {
+    mocks.freteHistorico.mockResolvedValue({
+      usdPorKg: 2.5,
+      periodo: { de: "2026-04", ate: "2026-09" },
+      mesesComDados: 5,
+    });
+    const result = await estimarCustoPublicoTool.run(
+      { ...cenario, freteUsd: undefined },
+      { userId: 1 },
+    );
+    expect(mocks.freteHistorico).toHaveBeenCalledWith({
+      ncm: cenario.ncm,
+      paisOrigem: "China",
+      modal: "maritimo",
+    });
+    expect(mocks.estimativa).toHaveBeenCalledWith(
+      expect.objectContaining({ freight: 50 }),
+    );
+    expect(result.data).toMatchObject({
+      referenciaFrete: {
+        freteEstimadoUsd: 50,
+        usdPorKg: 2.5,
+        mesesComDados: 5,
+      },
+      premissas: { freteUsd: 50, origemFrete: "histórico Comex Stat" },
+    });
+  });
+
   it("usa o custo calculado pelo motor e oculta a precificação de venda", async () => {
     const result = await estimarCustoPublicoTool.run(cenario, { userId: 1 });
     expect(mocks.comex).toHaveBeenCalledWith({ ncm: referencia.ncm });
+    expect(mocks.freteHistorico).not.toHaveBeenCalled();
     expect(mocks.estimativa).toHaveBeenCalledWith(
       expect.objectContaining({
         products: [expect.objectContaining({ unitPrice: 0.8 })],

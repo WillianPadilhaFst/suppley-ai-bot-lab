@@ -58,6 +58,7 @@ export interface ComexRow {
   pais?: string;
   metricFOB?: string | number;
   metricKG?: string | number;
+  metricFreight?: string | number;
   [k: string]: unknown;
 }
 
@@ -157,16 +158,24 @@ const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * silenciosamente. Por isso o 429 é tratado com espera e nova tentativa, em vez
  * de virar lista vazia.
  */
-async function postComex(body: unknown): Promise<ComexRow[]> {
-  for (let tentativa = 0; tentativa <= RETRIES_429; tentativa++) {
-    const resp = await fetch(COMEXSTAT_URL, {
+async function postComex(
+  body: unknown,
+  {
+    timeoutMs = TIMEOUT_MS,
+    retries = RETRIES_429,
+    language,
+  }: { timeoutMs?: number; retries?: number; language?: "pt" } = {},
+): Promise<ComexRow[]> {
+  const url = language ? `${COMEXSTAT_URL}?language=${language}` : COMEXSTAT_URL;
+  for (let tentativa = 0; tentativa <= retries; tentativa++) {
+    const resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
-    if (resp.status === 429 && tentativa < RETRIES_429) {
+    if (resp.status === 429 && tentativa < retries) {
       // Respeita o Retry-After quando vier; senão, recuo exponencial.
       const retryAfter = Number(resp.headers.get("retry-after"));
       const espera_ms = Number.isFinite(retryAfter) && retryAfter > 0
@@ -328,6 +337,80 @@ export async function consultarComexPorNcm(input: { ncm: string; fluxo?: Fluxo }
   ]);
 
   return agregarComex(ncm8, fluxo, recente, anterior);
+}
+
+const VIAS_FRETE = {
+  maritimo: { codigo: 1, nome: "maritima" },
+  aereo: { codigo: 4, nome: "aerea" },
+  ferroviario: { codigo: 6, nome: "ferroviaria" },
+  rodoviario: { codigo: 7, nome: "rodoviaria" },
+} as const;
+
+function normalizarDetalheComex(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+/** Média histórica ponderada pelo peso líquido declarado, para um NCM, origem e modal. */
+export async function consultarFreteHistoricoComex(input: {
+  ncm: string;
+  paisOrigem: string;
+  modal: keyof typeof VIAS_FRETE;
+}) {
+  const origem = normalizarDetalheComex(input.paisOrigem);
+  if (!/^\d{8}$/.test(input.ncm) || !origem) return null;
+
+  const via = VIAS_FRETE[input.modal];
+  const agora = new Date();
+  const de = ymMinus(agora, DEFASAGEM_MESES + 5);
+  const ate = ymMinus(agora, DEFASAGEM_MESES);
+  let rows: ComexRow[];
+  try {
+    rows = await postComex(
+      {
+        flow: "import",
+        monthDetail: true,
+        period: { from: de, to: ate },
+        filters: [
+          { filter: "ncm", values: [Number(input.ncm)] },
+          { filter: "via", values: [via.codigo] },
+        ],
+        details: ["country", "via"],
+        metrics: ["metricKG", "metricFreight"],
+      },
+      { retries: 0, timeoutMs: 8_000, language: "pt" },
+    );
+  } catch {
+    return null;
+  }
+
+  const meses = new Set<string>();
+  let freteUsd = 0;
+  let pesoLiquidoKg = 0;
+  for (const row of rows) {
+    const mes = ymDe(row);
+    const viaDetalhada = normalizarDetalheComex(row.via ?? row.noVia);
+    const peso = Number(row.metricKG);
+    const frete = Number(row.metricFreight);
+    if (
+      !mes || mes < de || mes > ate ||
+      normalizarDetalheComex(paisDe(row)) !== origem ||
+      (viaDetalhada !== via.nome && Number(viaDetalhada) !== via.codigo) ||
+      !Number.isFinite(peso) || peso <= 0 ||
+      !Number.isFinite(frete) || frete <= 0
+    ) continue;
+
+    meses.add(mes);
+    freteUsd += frete;
+    pesoLiquidoKg += peso;
+  }
+  const usdPorKg = freteUsd / pesoLiquidoKg;
+  if (meses.size < 2 || !Number.isFinite(usdPorKg) || usdPorKg <= 0) return null;
+
+  return { usdPorKg, periodo: { de, ate }, mesesComDados: meses.size };
 }
 
 // ---------------------------------------------------------------------------
