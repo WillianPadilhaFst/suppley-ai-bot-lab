@@ -17,6 +17,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   try {
     const values: InsertUser = {
       openId: user.openId,
+      role: user.role ?? "public",
+      approvalStatus: user.role ? "approved" : "pending",
     };
     const updateSet: Record<string, unknown> = {};
 
@@ -46,9 +48,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     if (user.role !== undefined) {
       values.role = user.role;
       updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
+
     }
 
     if (!values.lastSignedIn) {

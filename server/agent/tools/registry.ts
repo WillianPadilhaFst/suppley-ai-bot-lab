@@ -1,3 +1,6 @@
+import { getUserById } from "../../services/authService";
+import { authorizeTool, requireApproved } from "../../security/policy";
+import { audit } from "../../security/abuse";
 /**
  * Registry BASE de ferramentas da Excambia (camada de capacidades "folha").
  *
@@ -144,6 +147,10 @@ export async function runFrom(
   args: Record<string, unknown>,
   ctx: ToolContext,
 ): Promise<ToolResult> {
+  const user = await getUserById(ctx.userId);
+  try { requireApproved(user); authorizeTool(user!, name); }
+  catch { await audit(ctx.userId, `tool:${name}`, 'denied'); return {ok:false,summary:'Ferramenta não autorizada.',error:'forbidden'}; }
+  await audit(ctx.userId, `tool:${name}`, 'requested');
   const tool = tools.find((t) => t.name === name);
   if (!tool) {
     return { ok: false, summary: `Ferramenta "${name}" não encontrada.`, error: "tool_inexistente" };

@@ -10,7 +10,9 @@ export const users = mysqlTable("users", {
   email: varchar("email", { length: 320 }).unique(),
   passwordHash: varchar("passwordHash", { length: 255 }),
   loginMethod: mysqlEnum("loginMethod", ["email", "oauth", "apple", "google", "manus"]).default("email").notNull(),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: mysqlEnum("role", ["user", "admin", "public"]).default("user").notNull(),
+  approvalStatus: mysqlEnum("approvalStatus", ["pending", "approved", "rejected"]).default("approved").notNull(),
+  sessionVersion: int("sessionVersion").default(0).notNull(),
   isEmailVerified: boolean("isEmailVerified").default(false).notNull(),
   resetPasswordToken: varchar("resetPasswordToken", { length: 255 }),
   resetPasswordExpires: timestamp("resetPasswordExpires"),
@@ -2069,3 +2071,22 @@ export const llmUsage = mysqlTable("llm_usage", {
 }));
 export type LlmUsage = typeof llmUsage.$inferSelect;
 export type InsertLlmUsage = typeof llmUsage.$inferInsert;
+
+/** Public quotation intake; supplier and financial data never enter this table. */
+export const publicQuoteRequests = mysqlTable('public_quote_requests', {
+  id: int('id').autoincrement().primaryKey(),
+  userId: int('userId').notNull(),
+  requestKey: varchar('requestKey', {length:64}).notNull(),
+  conversaId: int('conversaId'),
+  operacaoId: int('operacaoId'),
+  produto: varchar('produto', {length:255}).notNull(),
+  especificacoes: text('especificacoes').notNull(),
+  quantidade: varchar('quantidade', {length:40}).notNull(),
+  unidade: varchar('unidade', {length:30}).notNull(),
+  destinoCidade: varchar('destinoCidade', {length:120}).notNull(),
+  destinoUf: varchar('destinoUf', {length:2}).notNull(),
+  prazoDesejado: varchar('prazoDesejado', {length:120}).notNull(),
+  status: mysqlEnum('status', ['recebida','em_analise','vinculada','encerrada']).default('recebida').notNull(),
+  criadaEm: timestamp('criadaEm').defaultNow().notNull(),
+  atualizadaEm: timestamp('atualizadaEm').defaultNow().onUpdateNow().notNull(),
+}, t=>({byUser:index('idx_public_quote_user').on(t.userId,t.criadaEm),requestKey:unique('uq_public_quote_request').on(t.userId,t.requestKey)}));

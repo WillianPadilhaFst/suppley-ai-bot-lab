@@ -1,82 +1,55 @@
 name: Test & Build
-
 on:
-  push:
-    branches: [main, development, claude/manus-migration-independent-*]
   pull_request:
-    branches: [main, development]
-
+  push:
+    branches: [main, development, development/public-access-mcp, claude/manus-migration-independent-*]
+permissions:
+  contents: read
 jobs:
   test-and-build:
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [18.x]
-
+    runs-on: ubuntu-24.04
     services:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: root
+          MYSQL_ROOT_PASSWORD: test-only
           MYSQL_DATABASE: suppley_calc_test
+        ports: ['3306:3306']
         options: >-
-          --health-cmd="mysqladmin ping"
+          --health-cmd="mysqladmin ping -ptest-only"
           --health-interval=10s
           --health-timeout=5s
-          --health-retries=3
-        ports:
-          - 3306:3306
-
+          --health-retries=10
+    env:
+      DATABASE_URL: mysql://root:test-only@127.0.0.1:3306/suppley_calc_test
+      TEST_DATABASE_URL: mysql://root:test-only@127.0.0.1:3306/suppley_calc_test
+      JWT_SECRET: ci-only-signing-key-at-least-32-characters
+      MCP_ENABLED: 'false'
+      MCP_AUTHORIZATION_REVIEWED: 'false'
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Para análise completa
-
-      - uses: pnpm/action-setup@v2
-        with:
-          version: 8
-
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Type check
-        run: pnpm check
-
-      - name: Run tests (if any)
-        run: pnpm test --run 2>/dev/null || echo "No tests found"
-
-      - name: Build
-        run: pnpm build
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Initialize disposable test schema
+        run: pnpm exec drizzle-kit push --force
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm build
+      - name: Install isolated browser test runtime
+        run: |
+          npm install --prefix /tmp/suppley-browser --no-save playwright@1.56.1
+          /tmp/suppley-browser/node_modules/.bin/playwright install --with-deps chromium
+      - name: Public portal desktop and mobile smoke
+        run: node scripts/public-portal-smoke.mjs
         env:
-          VITE_APP_ID: test-app
-          VITE_OAUTH_PORTAL_URL: ""
-          NODE_ENV: production
-          DATABASE_URL: mysql://root:root@localhost:3306/suppley_calc_test
-          JWT_SECRET: test-secret-key-for-ci
-          ANTHROPIC_API_KEY: dummy-for-build
-
-      - name: Upload build artifact
-        if: success()
-        uses: actions/upload-artifact@v3
+          SUPPLEY_PLAYWRIGHT_DIR: /tmp/suppley-browser/node_modules/playwright
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: build-${{ github.sha }}
-          path: dist/
-          retention-days: 5
-
-      - name: Comment PR on failure
-        if: failure() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '❌ Build falhou. Verifique logs: ' + context.serverUrl + '/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId
-            })
+          name: public-portal-screenshots
+          path: artifacts/public-portal/
+          if-no-files-found: ignore
