@@ -12,8 +12,10 @@ import {
   createOwnOperation,
 } from "../../services/publicOperations";
 import { calcularCubagemTool } from "./calcularCubagem";
+import { estimarCustoPublicoTool } from "./estimarCustoPublico";
 export const PUBLIC_TOOLS: AgentTool[] = [
   calcularCubagemTool,
+  estimarCustoPublicoTool,
   {
     name: "consultar_minhas_solicitacoes",
     schema: defineSchema(

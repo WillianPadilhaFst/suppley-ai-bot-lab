@@ -64,6 +64,7 @@ export const publicToolNames = new Set([
   "consultar_minhas_operacoes",
   "criar_minha_operacao",
   "calcular_cubagem",
+  "estimar_custo_importacao",
   "solicitar_cotacao",
   "consultar_minhas_solicitacoes",
 ]);

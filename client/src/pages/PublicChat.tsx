@@ -13,9 +13,9 @@ import { toast } from "sonner";
 
 const prompts = [
   {
-    title: "Pedir cotação",
+    title: "Estimar custo de importação",
     description: "Produto, quantidade e destino",
-    text: "Quero pedir uma cotação para importar ",
+    text: "Quero estimar o custo para importar ",
     icon: Box,
   },
   {
@@ -163,8 +163,8 @@ export default function PublicChat() {
             </div>
             <h2>O que você quer importar?</h2>
             <p>
-              Conte o que você precisa. A Excambia ajuda a preparar o pedido de
-              cotação para a equipe Suppley.
+              Descreva o produto para estimar o custo de importação ou pedir uma
+              cotação à equipe Suppley.
             </p>
             <div className="pw-prompts">
               {prompts.map(({ title, description, text, icon: Icon }) => (
@@ -230,7 +230,7 @@ export default function PublicChat() {
         <textarea
           ref={composer}
           aria-label="Mensagem para Excambia"
-          placeholder="Descreva o produto que deseja cotar…"
+          placeholder="Descreva o produto que deseja importar…"
           rows={2}
           value={draft}
           maxLength={12000}
