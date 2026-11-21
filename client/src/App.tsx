@@ -9,8 +9,10 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 
 // Auth Pages — login é eager (primeira pintura); o resto entra sob demanda.
 import Login from "./pages/Login";
+import { useAuth } from "./_core/hooks/useAuth";
 const Register = lazy(() => import("./pages/Register"));
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const LandingExcambia = lazy(() => import("./pages/LandingExcambia"));
 
 // Dashboard Pages — code-splitting por rota: cada página vira um chunk próprio,
 // e o renderizador pesado (markdown/shiki/mermaid/katex) só baixa onde é usado.
@@ -46,6 +48,22 @@ function RouteFallback() {
       <Loader2 className="h-6 w-6 animate-spin text-violet-400" />
     </div>
   );
+}
+
+/**
+ * RootGateway — Em `/`:
+ * - Visitantes não autenticados veem a página pública de apresentação e simulação da Excambia (`LandingExcambia`).
+ * - Usuários autenticados entram direto na Excambia (`AuthenticatedRoutes`).
+ */
+function RootGateway() {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return <RouteFallback />;
+  }
+  if (!user) {
+    return <LandingExcambia />;
+  }
+  return <AuthenticatedRoutes />;
 }
 
 function AuthenticatedRoutes() {
@@ -90,10 +108,12 @@ function Router() {
   return (
     <Suspense fallback={<RouteFallback />}>
     <Switch>
-      {/* Public auth routes */}
+      {/* Public presentation & auth routes */}
+      <Route path="/apresentacao" component={LandingExcambia} />
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
       <Route path="/forgot-password" component={ForgotPassword} />
+      <Route path="/" component={RootGateway} />
 
       {/* Protected routes - DashboardLayout handles auth */}
       <Route>

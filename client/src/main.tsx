@@ -86,13 +86,17 @@ const trpcClient = trpc.createClient({
 
 // Remove Manus badge/watermark dynamically
 const removeManusBadge = () => {
-  // Find and remove any element containing "Made with Manus"
-  const allElements = document.querySelectorAll('*');
+  const allElements = document.querySelectorAll('a, div, span');
   allElements.forEach(el => {
-    if (el.textContent?.includes('Made with Manus') || 
-        el.textContent?.includes('Made with manus') ||
-        (el as HTMLAnchorElement).href?.includes('manus.im') ||
-        (el as HTMLAnchorElement).href?.includes('manus.app')) {
+    const rawHref = (el as HTMLAnchorElement).href;
+    const hrefStr = typeof rawHref === 'string' ? rawHref : '';
+    const directText = el.children.length === 0 ? (el.textContent ?? '') : '';
+    if (
+      directText.includes('Made with Manus') ||
+      directText.includes('Made with manus') ||
+      hrefStr.includes('manus.im') ||
+      hrefStr.includes('manus.app')
+    ) {
       (el as HTMLElement).style.display = 'none';
       (el as HTMLElement).style.visibility = 'hidden';
       (el as HTMLElement).style.opacity = '0';
