@@ -17,6 +17,9 @@ export const ENV = {
   get forgeApiUrl() { return process.env.BUILT_IN_FORGE_API_URL ?? ""; },
   get forgeApiKey() { return process.env.BUILT_IN_FORGE_API_KEY ?? ""; },
   get anthropicApiKey() { return process.env.ANTHROPIC_API_KEY ?? ""; },
+  get deepseekApiKey() { return process.env.DEEPSEEK_API_KEY ?? ""; },
+  /** Provedor de LLM ativo: "anthropic" (default) ou "deepseek". */
+  get llmProvider() { return (process.env.LLM_PROVIDER ?? "anthropic").toLowerCase(); },
   /**
    * URL pública da aplicação (ex.: https://calculasuppley.com.br), sem barra
    * final. Usada para montar links ABSOLUTOS de arquivo — necessários quando o
