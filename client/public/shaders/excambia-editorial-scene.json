@@ -1,0 +1,105 @@
+{
+  "version": "2.6.1",
+  "designId": "suppley-excambia-aurora",
+  "projectName": "SUPPLEY Excambia Interactive Aurora",
+  "sceneName": "Suppley Aurora",
+  "options": {
+    "name": "SUPPLEY Excambia Interactive Aurora",
+    "fps": 60,
+    "dpi": 1,
+    "scale": 0.75,
+    "freePlan": false,
+    "includeLogo": false
+  },
+  "variables": {
+    "definitions": [
+      { "id": "var_intensity", "name": "intensity", "type": "number", "defaultValue": 1.0, "description": "Aurora luminance" },
+      { "id": "var_distortion", "name": "distortion", "type": "number", "defaultValue": 0.75, "description": "Fluid wave distortion" },
+      { "id": "var_speed", "name": "speed", "type": "number", "defaultValue": 0.65, "description": "Animation speed" },
+      { "id": "var_colorA", "name": "colorA", "type": "color", "defaultValue": "#7C3AED", "description": "SUPPLEY Electric Violet" },
+      { "id": "var_colorB", "name": "colorB", "type": "color", "defaultValue": "#28E7C5", "description": "Excambia Turquoise" },
+      { "id": "var_bg", "name": "bg", "type": "color", "defaultValue": "#080512", "description": "Deep Obsidian" }
+    ],
+    "bindings": [
+      { "id": "bind_intensity", "layerId": "excambia-aurora", "kind": "prop", "target": "intensity", "variableId": "var_intensity", "enabled": true },
+      { "id": "bind_distortion", "layerId": "excambia-aurora", "kind": "prop", "target": "distortion", "variableId": "var_distortion", "enabled": true },
+      { "id": "bind_speed", "layerId": "excambia-aurora", "kind": "prop", "target": "speed", "variableId": "var_speed", "enabled": true },
+      { "id": "bind_colorA", "layerId": "excambia-aurora", "kind": "prop", "target": "colorA", "variableId": "var_colorA", "enabled": true },
+      { "id": "bind_colorB", "layerId": "excambia-aurora", "kind": "prop", "target": "colorB", "variableId": "var_colorB", "enabled": true },
+      { "id": "bind_bg", "layerId": "excambia-aurora", "kind": "prop", "target": "bg", "variableId": "var_bg", "enabled": true }
+    ],
+    "presets": [
+      {
+        "id": "preset_aurora",
+        "name": "Suppley Aurora",
+        "values": {
+          "var_intensity": 1.0,
+          "var_distortion": 0.75,
+          "var_speed": 0.65,
+          "var_colorA": "#7C3AED",
+          "var_colorB": "#28E7C5",
+          "var_bg": "#080512"
+        }
+      },
+      {
+        "id": "preset_purple",
+        "name": "Suppley Purple",
+        "values": {
+          "var_intensity": 1.05,
+          "var_distortion": 0.8,
+          "var_speed": 0.7,
+          "var_colorA": "#9333EA",
+          "var_colorB": "#28E7C5",
+          "var_bg": "#180834"
+        }
+      },
+      {
+        "id": "preset_light",
+        "name": "Editorial Light",
+        "values": {
+          "var_intensity": 0.95,
+          "var_distortion": 0.62,
+          "var_speed": 0.6,
+          "var_colorA": "#B28CFF",
+          "var_colorB": "#60EBD2",
+          "var_bg": "#FAF9F6"
+        }
+      }
+    ]
+  },
+  "history": [
+    {
+      "id": "excambia-aurora",
+      "publicId": "excambia-aurora",
+      "layerName": "Excambia Interactive Aurora",
+      "layerType": "effect",
+      "type": "gradient",
+      "visible": true,
+      "animating": true,
+      "speed": 0.65,
+      "trackMouse": 0.92,
+      "mouseMomentum": 0.92,
+      "intensity": 1.0,
+      "distortion": 0.75,
+      "colorA": { "type": "Vec3", "_x": 0.486, "_y": 0.227, "_z": 0.929 },
+      "colorB": { "type": "Vec3", "_x": 0.157, "_y": 0.906, "_z": 0.773 },
+      "bg": { "type": "Vec3", "_x": 0.031, "_y": 0.02, "_z": 0.071 },
+      "data": {
+        "hasMouseTracking": true,
+        "uniforms": {
+          "intensity": { "name": "uIntensity", "type": "1f", "value": 1.0 },
+          "distortion": { "name": "uDistortion", "type": "1f", "value": 0.75 },
+          "colorA": { "name": "uColorA", "type": "3f", "value": { "type": "Vec3", "_x": 0.486, "_y": 0.227, "_z": 0.929 } },
+          "colorB": { "name": "uColorB", "type": "3f", "value": { "type": "Vec3", "_x": 0.157, "_y": 0.906, "_z": 0.773 } },
+          "bg": { "name": "uBg", "type": "3f", "value": { "type": "Vec3", "_x": 0.031, "_y": 0.02, "_z": 0.071 } }
+        }
+      },
+      "compiledVertexShaders": [
+        "#version 300 es\nprecision highp float;\nin vec3 aVertexPosition;\nin vec2 aTextureCoord;\nuniform mat4 uMVMatrix;\nuniform mat4 uPMatrix;\nout vec2 vTextureCoord;\nvoid main() {\n  gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);\n  vTextureCoord = aTextureCoord;\n}"
+      ],
+      "compiledFragmentShaders": [
+        "#version 300 es\nprecision mediump float;\nin vec2 vTextureCoord;\nout vec4 fragColor;\nuniform vec2 uResolution;\nuniform vec2 uMousePos;\nuniform float uTime;\nuniform float uClick;\nuniform float uIntensity;\nuniform float uDistortion;\nuniform vec3 uColorA;\nuniform vec3 uColorB;\nuniform vec3 uBg;\n\nfloat hash(vec2 p) {\n  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);\n}\n\n// Fast analytic trigonometric curl flow — silky 60fps even on integrated GPUs\nvec2 warpField(vec2 p, float t, float d) {\n  vec2 w = p;\n  w += 0.34 * d * vec2(sin(w.y * 2.4 + t * 0.85), cos(w.x * 2.2 - t * 0.72));\n  w += 0.22 * d * vec2(cos(w.y * 3.9 - t * 1.15 + w.x * 1.4), sin(w.x * 3.6 + t * 0.95 - w.y * 1.2));\n  w += 0.11 * d * vec2(sin(w.x * 6.2 + w.y * 4.5 + t * 1.3), cos(w.y * 5.8 - w.x * 4.1 - t * 1.1));\n  return w;\n}\n\nvoid main() {\n  vec2 uv = vTextureCoord;\n  vec2 asp = vec2(uResolution.x / max(1.0, uResolution.y), 1.0);\n  vec2 p = (uv - 0.5) * asp;\n  vec2 m = (uMousePos - 0.5) * asp;\n  float t = uTime * 0.028;\n\n  // Interactive cursor gravity pull + click chromatic shockwave\n  vec2 toM = p - m;\n  float dM = length(toM);\n  float pull = exp(-dM * 2.5) * (0.32 + 0.22 * uClick) * uDistortion;\n  float shock = exp(-pow(abs(dM - (0.16 + 0.26 * uClick)), 2.0) * 85.0) * uClick;\n  vec2 wp = p - normalize(toM + 0.0001) * pull * 0.36;\n\n  vec2 w = warpField(wp * 1.15, t, uDistortion);\n  float ridgeA = pow(0.5 + 0.5 * sin(w.x * 3.1 + w.y * 2.2 - t * 0.6), 2.4);\n  float ridgeB = pow(0.5 + 0.5 * cos(w.y * 3.4 - w.x * 2.5 + t * 0.55), 2.8);\n  float silk = pow(max(0.0, 1.0 - abs(sin(w.x * 2.6 + w.y * 1.9)) * 1.7), 2.6);\n\n  float orb1 = exp(-length(p - vec2(0.46 + 0.14 * sin(t * 0.65), 0.18 + 0.10 * cos(t * 0.55))) * 1.45);\n  float orb2 = exp(-length(p - vec2(-0.42 + 0.14 * cos(t * 0.5), -0.18 + 0.12 * sin(t * 0.6))) * 1.55);\n  float mGlow = exp(-dM * 2.6) * (0.7 + 0.35 * uClick);\n\n  float bgLum = dot(uBg, vec3(0.299, 0.587, 0.114));\n  vec3 col = uBg;\n\n  if (bgLum > 0.5) {\n    col = mix(col, uColorA, clamp((orb1 * 0.45 + ridgeA * 0.32) * uIntensity, 0.0, 0.7));\n    col = mix(col, uColorB, clamp((orb2 * 0.42 + ridgeB * 0.3 + mGlow * 0.38) * uIntensity, 0.0, 0.65));\n    col = mix(col, vec3(1.0), silk * 0.38);\n  } else {\n    col = mix(col, mix(uBg, uColorA, 0.68), clamp((orb1 * 0.8 + ridgeA * 0.46) * uIntensity, 0.0, 0.92));\n    col += uColorA * (silk * 0.58 + ridgeA * 0.24) * uIntensity;\n    col += uColorB * (ridgeB * 0.52 + orb2 * 0.45 + mGlow * 0.48 + shock * 0.6) * uIntensity;\n    col += mix(mix(uColorA, uColorB, ridgeA), vec3(1.0), 0.4) * silk * ridgeB * 0.95 * uIntensity;\n    float vig = smoothstep(1.38, 0.25, length(p * vec2(0.84, 1.04)));\n    col *= mix(0.64, 1.06, vig);\n  }\n\n  col += (hash(gl_FragCoord.xy + fract(t * 17.3)) - 0.5) * 0.014;\n  fragColor = vec4(clamp(col, 0.0, 1.0), 1.0);\n}"
+      ]
+    }
+  ]
+}
