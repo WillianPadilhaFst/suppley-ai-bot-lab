@@ -101,7 +101,8 @@ const hideManusBadge = (root: ParentNode) => {
   );
 
   for (const el of candidates) {
-    const href = (el as HTMLAnchorElement).href ?? "";
+    const rawHref = (el as HTMLAnchorElement).href;
+    const href = typeof rawHref === "string" ? rawHref : "";
     const text = el.textContent ?? "";
     if (
       href.includes("manus.im") ||

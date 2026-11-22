@@ -279,6 +279,9 @@ importers:
       tailwindcss-animate:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@4.3.1)
+      unicornstudio:
+        specifier: ^2.6.1
+        version: 2.6.1(react@19.2.7)
       vaul:
         specifier: ^1.1.2
         version: 1.1.2(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -4480,6 +4483,20 @@ packages:
 
   unicode-trie@2.0.0:
     resolution: {integrity: sha512-x7bc76x0bm4prf1VLg79uhAzKw8DVboClSN5VxJuQ+LKDOVEW9CdH+VY7SP+vX7xCYQqzzgQpFqz15zeLvAtZQ==}
+
+  unicornstudio@2.6.1:
+    resolution: {integrity: sha512-ybCF33RkUrlah+pp2IDyLvbXJEIRkNtgCU6kbNDd6WjhuzPEsLrqA9ue2NzBULcutd3h8obvteUnTT4MBjBOOA==}
+    peerDependencies:
+      react: '>=18'
+      svelte: '>=4'
+      vue: '>=3.3'
+    peerDependenciesMeta:
+      react:
+        optional: true
+      svelte:
+        optional: true
+      vue:
+        optional: true
 
   unified@11.0.5:
     resolution: {integrity: sha512-xKvGhPWw3k84Qjh8bI3ZeJjqnyadK+GEFtazSfZv/rKeTkTjOJho6mFqh2SM96iIcZokxiOpg78GazTSg8+KHA==}
@@ -9180,6 +9197,10 @@ snapshots:
     dependencies:
       pako: 0.2.9
       tiny-inflate: 1.0.3
+
+  unicornstudio@2.6.1(react@19.2.7):
+    optionalDependencies:
+      react: 19.2.7
 
   unified@11.0.5:
     dependencies:
