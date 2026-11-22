@@ -1614,7 +1614,7 @@ export function InteractiveBeforeAfterCurtain() {
 
           <div className="flex items-center justify-end gap-3 text-xs text-white/70">
             <ShieldCheck className="h-4 w-4 text-[#28E7C5]" />
-            <span>Margem protegida · Governança corporativa total</span>
+            <span>Margem protegida · Sigilo e controle total</span>
           </div>
         </div>
 

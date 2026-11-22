@@ -104,9 +104,9 @@ const SERVICE_PILLARS = [
   },
   {
     icon: ShieldCheck,
-    tag: "GOVERNANÇA",
-    title: "Ambiente corporativo privado",
-    desc: "Credenciais liberadas pela administração SUPPLEY com sigilo total dos seus fornecedores, preços e margens.",
+    tag: "SEGURANÇA",
+    title: "Ambiente privado e seguro",
+    desc: "Login liberado pela equipe SUPPLEY com sigilo total dos seus fornecedores, preços e margens.",
   },
 ];
 
@@ -117,11 +117,11 @@ const FAQ_ITEMS = [
   },
   {
     q: "Como faço para solicitar uma cotação dentro da Excambia?",
-    a: "Ao entrar com seu login corporativo, basta descrever o insumo/volume ou anexar uma Proforma Invoice (PDF ou Excel). A Excambia estrutura os itens, valida a NCM e cruza custos, tributos e fabricantes junto à equipe SUPPLEY.",
+    a: "Ao entrar com seu login, basta descrever o insumo/volume ou anexar uma Proforma Invoice (PDF ou Excel). A Excambia estrutura os itens, valida a NCM e cruza custos, tributos e fabricantes junto à equipe SUPPLEY.",
   },
   {
-    q: "Como obtenho meu login de acesso corporativo?",
-    a: "Para garantir sigilo comercial absoluto para cada empresa, o login é liberado pela equipe SUPPLEY. Clique em 'Solicitar acesso', envie seus dados (ou traga sua simulação pronta) e provisionaremos suas credenciais.",
+    q: "Como obtenho meu login de acesso?",
+    a: "Para garantir sigilo comercial absoluto para cada cliente, o login é liberado pela equipe SUPPLEY. Clique em 'Solicitar acesso', faça seu cadastro e nossa equipe liberará seu acesso.",
   },
   {
     q: "Minha empresa precisa já importar para usar o serviço?",
@@ -695,7 +695,7 @@ export default function LandingExcambia() {
                       Pronto para cotar sua próxima importação na Excambia?
                     </h2>
                     <p className="text-sm leading-relaxed text-white/80 sm:text-base">
-                      Solicite suas credenciais corporativas para acessar o ambiente completo ou entre agora se sua empresa já possui login ativo.
+                      Solicite seu login para acessar o ambiente completo ou entre agora se você já possui acesso ativo.
                     </p>
 
                     <div className="flex flex-wrap items-center justify-center gap-3.5 pt-2">
