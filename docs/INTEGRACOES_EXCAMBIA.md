@@ -41,10 +41,23 @@ Use uma chave estável por solicitação, com até 128 caracteres alfanuméricos
 
 A criação de operação recebe um JSON com `titulo`. Cada envio cria uma operação; em caso de perda de resposta, consulte as operações antes de reenviar.
 
-## Ativar em homologação
+## Configurar por ambiente
 
-1. Confirme que o banco de homologação tem as migrações versionadas registradas, incluindo `0050_public_access_mcp` e `0051_public_quote_requests`.
+| Ambiente | Configuração | Como validar |
+| --- | --- | --- |
+| Desenvolvimento | `.env` a partir de `.env.example` | Os testes locais simulam o provedor. Para conectar um cliente externo, use um endereço HTTPS de desenvolvimento e um cliente OAuth de teste. |
+| CI | Variáveis temporárias dos testes e MySQL descartável | O workflow Test & Build verifica HTTP, permissões, migrações e empacotamento. |
+| Homologação | Variáveis no próprio serviço e banco de homologação | Use o domínio e o cliente OAuth desse ambiente para testar a conexão e a fila comercial. |
+| Produção | `.env.production` no deploy via Compose | Use o domínio público e o cliente OAuth de produção. Valide primeiro com uma conta-piloto aprovada. |
+
+Em cada implantação, configure `MCP_RESOURCE_URL=https://<host-do-ambiente>/mcp` e `INTEGRATION_API_RESOURCE_URL=https://<host-do-ambiente>/api/v1`. Cadastre essas duas audiências no provedor OAuth e defina o emissor e a URL do JWKS do ambiente. O proxy HTTPS deve preservar o host público nas requisições encaminhadas ao app.
+
+## Ativar e validar
+
+1. Confirme que o banco do ambiente tem as migrações versionadas registradas, incluindo `0050_public_access_mcp` e `0051_public_quote_requests`.
 2. Configure um provedor OAuth compatível com o cliente MCP e cadastre cada aplicação integradora. Configure `MCP_OAUTH_ISSUER`, `MCP_JWKS_URL`, `MCP_RESOURCE_URL` e `INTEGRATION_API_RESOURCE_URL`.
 3. Vincule `issuer`, `subject` e `clientId` verificados no provedor ao `userId` aprovado da Excambia em `mcp_identities`. Conceda os escopos de acordo com a aplicação. Emita um token novo após criar ou atualizar o vínculo.
-4. Revise a autorização no ambiente de homologação e habilite `MCP_AUTHORIZATION_REVIEWED` e as interfaces que serão testadas (`MCP_ENABLED` e/ou `INTEGRATION_API_ENABLED`). Ambas vêm desligadas por padrão.
-5. Confirme a descoberta OAuth, autenticação com o cliente real, criação da solicitação e aparecimento na fila, leitura do protocolo, repetição idempotente e bloqueio do protocolo de outra conta. Use um token de cada audiência e verifique que a outra interface o rejeita.
+4. Revise a autorização no ambiente em questão e habilite `MCP_AUTHORIZATION_REVIEWED` e as interfaces que serão testadas (`MCP_ENABLED` e/ou `INTEGRATION_API_ENABLED`). Ambas vêm desligadas por padrão.
+5. Confirme a descoberta OAuth, autenticação com o cliente real, criação da solicitação e aparecimento na fila, leitura do protocolo, repetição idempotente e bloqueio do protocolo de outra conta. Use um token de cada audiência e verifique que a outra interface o rejeita. Verifique também que um token emitido para outro ambiente é rejeitado.
+
+Para desativar uma interface, volte a variável correspondente para `false` e recarregue apenas o serviço da aplicação.
