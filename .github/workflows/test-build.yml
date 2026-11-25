@@ -2,7 +2,7 @@ name: Test & Build
 on:
   pull_request:
   push:
-    branches: [main, development, development/public-access-mcp, release/public-chat, claude/manus-migration-independent-*]
+    branches: [main, development, development/public-access-mcp, release/public-chat, release/landing-excambia-2026-11-21, claude/manus-migration-independent-*]
 permissions:
   contents: read
 jobs:
