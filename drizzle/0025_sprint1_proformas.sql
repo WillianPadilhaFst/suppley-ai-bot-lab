@@ -16,13 +16,17 @@ SET @col_exists := (
     AND TABLE_NAME = 'industries'
     AND COLUMN_NAME = 'tipoEntidade'
 );
+--> statement-breakpoint
 SET @ddl := IF(@col_exists = 0,
   'ALTER TABLE industries ADD COLUMN tipoEntidade ENUM(''fornecedor'',''comprador'') NOT NULL DEFAULT ''fornecedor''',
   'SELECT 1');
+--> statement-breakpoint
 PREPARE stmt FROM @ddl;
+--> statement-breakpoint
 EXECUTE stmt;
+--> statement-breakpoint
 DEALLOCATE PREPARE stmt;
-
+--> statement-breakpoint
 -- 2) Tabela de Proformas/Invoices (resultado estruturado)
 CREATE TABLE IF NOT EXISTS proformas (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -56,7 +60,7 @@ CREATE TABLE IF NOT EXISTS proformas (
   INDEX idx_proformas_user (userId),
   INDEX idx_proformas_industria (industriaId)
 );
-
+--> statement-breakpoint
 -- 3) Itens da proforma
 CREATE TABLE IF NOT EXISTS proforma_items (
   id INT AUTO_INCREMENT PRIMARY KEY,

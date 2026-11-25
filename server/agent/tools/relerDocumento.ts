@@ -15,8 +15,7 @@
 import { defineSchema, type AgentTool, type ToolContext, type ToolResult } from "./types";
 import { getProformasByUser, getProformaById } from "../../db/proformaDb";
 import * as operacaoService from "../../services/operacaoService";
-import { storageGet } from "../../storage";
-import { buildAttachmentBlock } from "../../services/attachmentBlock";
+import { buildStoredAttachmentBlock } from "../../services/attachmentBlock";
 import { normalizeForSearch } from "../../services/productSimilarity";
 
 const schema = defineSchema(
@@ -33,7 +32,7 @@ const schema = defineSchema(
     properties: {
       numeroProforma: { type: "string", description: "Número da proforma cujo arquivo original deve ser relido (ex.: 'PF-2026-0011')" },
       proformaId: { type: "number", description: "ID da proforma (alternativa ao número)" },
-      nomeArquivo: { type: "string", description: "Parte do nome do arquivo (procura em proformas e nos anexos da operação do contexto)" },
+      nomeArquivo: { type: "string", description: "Parte do nome do arquivo (procura nos arquivos enviados nesta conversa, nas proformas e nos anexos da operação do contexto)" },
       operationId: { type: "number", description: "ID da operação onde procurar o anexo (opcional; usa o contexto se ausente)" },
     },
   },
@@ -84,6 +83,13 @@ export const relerDocumentoTool: AgentTool = {
       );
       if (p?.fileKey) achado = { fileKey: p.fileKey, nome: p.fileName ?? `proforma-${p.numero}`, mimeType: mimeFromName(p.fileName ?? ".pdf"), origem: `proforma ${p.numero ?? p.id}` };
     }
+    if (!achado && ctx.anexosConversa?.length) {
+      // Arquivo enviado antes nesta conversa: por nome, ou o mais recente.
+      const a = nomeArquivo
+        ? ctx.anexosConversa.find((x) => normalizeForSearch(x.name).includes(nomeArquivo))
+        : ctx.anexosConversa[0];
+      if (a) achado = { fileKey: a.fileKey, nome: a.name, mimeType: a.mimeType || mimeFromName(a.name), origem: "esta conversa" };
+    }
     if (!achado && opId) {
       try {
         const anexos = await operacaoService.listarAnexos(ctx.userId, opId);
@@ -109,8 +115,11 @@ export const relerDocumentoTool: AgentTool = {
     // 2) Re-assina a URL e re-extrai o conteúdo (mesmo pipeline do anexo do chat)
     let texto: string | null = null;
     try {
-      const { url } = await storageGet(achado.fileKey, 3600);
-      const block = await buildAttachmentBlock({ url, mimeType: achado.mimeType, name: achado.nome });
+      const block = await buildStoredAttachmentBlock({
+        fileKey: achado.fileKey,
+        mimeType: achado.mimeType,
+        name: achado.nome,
+      });
       if (block && (block as any).type === "text") {
         texto = String((block as any).text ?? "");
       } else if (block) {

@@ -1,135 +1,98 @@
+import { resolveSession } from "../security/session";
+import { chatInput, validateChat } from "../security/chatInput";
+import { runPublicChat } from "../agent/publicChat";
 import { Router, Request, Response } from "express";
-import { jwtVerify } from "jose";
+import { performance } from "node:perf_hooks";
 import * as conversaDb from "../db/conversaDb";
-import { getUserById } from "../services/authService";
 import { runExcambiaStream } from "../agent/orchestrator";
 import { enrichOperacaoFromChat } from "../services/gapEnrichmentService";
 import { applyAttachmentToMessages, attachmentMarker, type AttachmentRef } from "../services/attachmentBlock";
 import type { Message } from "../_core/llm";
+import { createRateLimit } from "../_core/rateLimit";
 
 const router = Router();
-
-// Mesmo secret e cookie do context.ts (autenticação tRPC) — manter sincronizado.
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "suppley-calc-secret-key-2024"
-);
-const SESSION_COOKIE = "suppley_session";
-
-interface StreamPayload {
-  conversaId: number;
-  messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
-  operacaoId?: number;
-  estagio?: string;
-  attachment?: AttachmentRef;
-}
-
-async function verifySessionToken(token: string): Promise<number | null> {
-  try {
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    return (payload.userId as number) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/** Lê o cookie de sessão direto do header (não há cookie-parser registrado). */
-function readSessionCookie(req: Request): string | null {
-  const raw = req.headers.cookie;
-  if (!raw) return null;
-  for (const part of raw.split(";")) {
-    const [name, ...rest] = part.trim().split("=");
-    if (name === SESSION_COOKIE) return decodeURIComponent(rest.join("="));
-  }
-  return null;
-}
-
-/** Resolve o usuário do request: Authorization Bearer (fallback) ou cookie de sessão. */
-async function resolveUserId(req: Request): Promise<number | null> {
-  const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith("Bearer ")) {
-    const userId = await verifySessionToken(authHeader.slice(7));
-    if (userId) return userId;
-  }
-  const cookieToken = readSessionCookie(req);
-  if (cookieToken) {
-    const userId = await verifySessionToken(cookieToken);
-    if (userId) return userId;
-  }
-  return null;
-}
+const chatStreamRateLimit = createRateLimit({ windowMs: 60_000, max: 30 });
 
 /**
  * Traduz o erro técnico (geralmente da API da Anthropic) numa mensagem clara e
  * ACIONÁVEL, exibida na própria conversa — assim o problema é diagnosticável sem
  * abrir os logs do servidor.
  */
+/**
+ * Classifica a falha para o LOG do operador e devolve o texto para o USUÁRIO.
+ *
+ * Antes, o texto técnico ia direto para a tela ("os créditos da API da IA
+ * acabaram", "ANTHROPIC_API_KEY não está definida", "avise o time técnico").
+ * Isso é diagnóstico de operador — exposto a um cliente ou investidor, revela
+ * a encanação e quebra a experiência. O diagnóstico continua inteiro no log
+ * (`[chatStream] falha classificada`); a tela recebe uma mensagem à altura do
+ * produto, que diz o que fazer sem dizer o que quebrou.
+ */
 function diagnoseError(err: unknown): string {
   const msg = String((err as { message?: string })?.message ?? err ?? "");
   const has = (re: RegExp) => re.test(msg);
 
-  if (has(/ANTHROPIC_API_KEY is not configured/i))
-    return "Configuração ausente: a chave da API (ANTHROPIC_API_KEY) não está definida no servidor. Avise o time técnico.";
-  if (has(/\b401\b|authentication|invalid x-api-key|invalid api key/i))
-    return "Falha de autenticação com a IA — a chave da API parece inválida ou expirada. É preciso atualizar a ANTHROPIC_API_KEY.";
-  if (has(/\b403\b|permission|not allowed|web_search/i))
-    return "A IA recusou a requisição (permissão). Pode ser um recurso não habilitado na conta (ex.: pesquisa web). Avise o time técnico para revisar.";
-  if (has(/credit|billing|quota|insufficient|payment/i))
-    return "Os créditos da API da IA acabaram. É preciso recarregar o saldo na conta da Anthropic para a Excambia voltar a responder.";
-  if (has(/\b429\b|rate limit|overloaded|too many requests/i))
-    return "Muitas requisições em pouco tempo (limite da IA). Aguarde alguns segundos e tente de novo.";
-  if (has(/prompt is too long|context|maximum.*tokens|too many tokens/i))
-    return "O conteúdo ficou grande demais para uma única análise. Tente enviar menos itens por vez ou um arquivo menor.";
-  if (has(/\b400\b/i))
-    return "A requisição à IA foi rejeitada (erro 400). Já estou registrando o detalhe — me diga o que tentou fazer que eu ajusto.";
+  let categoria = "desconhecida";
+  let usuario =
+    "Tive uma instabilidade ao concluir esta análise. Pode repetir a pergunta? " +
+    "Se preferir, reformule em uma frase que eu retomo daqui.";
 
-  return "Tive um problema técnico ao processar agora. Tente de novo em instantes — se persistir, me diga de outro jeito que eu sigo daqui.";
+  if (has(/ANTHROPIC_API_KEY is not configured/i)) categoria = "chave_ausente";
+  else if (has(/\b401\b|authentication|invalid x-api-key|invalid api key/i)) categoria = "chave_invalida";
+  else if (has(/\b403\b|permission|not allowed|web_search/i)) categoria = "permissao";
+  else if (has(/credit|billing|quota|insufficient|payment/i)) categoria = "creditos";
+  else if (has(/\b429\b|rate limit|overloaded|too many requests/i)) {
+    categoria = "limite_taxa";
+    usuario = "Estou com muitas análises em paralelo neste instante. Me dê alguns segundos e repita a pergunta — retomo de onde paramos.";
+  } else if (has(/prompt is too long|context|maximum.*tokens|too many tokens/i)) {
+    categoria = "contexto_grande";
+    usuario = "Este material ficou extenso demais para uma única análise. Envie em partes — por exemplo, metade dos itens por vez — que eu consolido no final.";
+  } else if (has(/\b400\b/i)) categoria = "requisicao_rejeitada";
+
+  console.error(`[chatStream] falha classificada: ${categoria}`);
+  return usuario;
 }
 
-router.post("/api/chat/stream", async (req: Request, res: Response) => {
+router.post("/api/chat/stream", chatStreamRateLimit, async (req: Request, res: Response) => {
+  const perfStartedAt = performance.now();
+  let perfFirstEventAt: number | null = null;
   try {
-    const userId = await resolveUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: "Unauthorized" });
+    const user = await resolveSession(req);
+    if (!user) { res.status(401).json({error:'Unauthorized'}); return; }
+    const parsed = chatInput.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({error:'Mensagem inválida.'}); return; }
+    const payload = await validateChat(user, parsed.data);
+    if (user.role === 'public') {
+      await conversaDb.addMessage(payload.conversaId,'user',payload.messages.at(-1)!.content);
+      const result = await runPublicChat(user,payload.messages,{conversaId:payload.conversaId});
+      await conversaDb.addMessage(payload.conversaId,'assistant',result.reply,result.toolsUsed,result.toolResults);
+      res.setHeader('Content-Type','text/event-stream');
+      res.setHeader('Cache-Control','no-store');
+      res.end(`data: ${JSON.stringify({type:'reply',...result})}\n\ndata: {"type":"done"}\n\n`);
       return;
     }
-
-    // Confirma que o usuário existe (espelha o context.ts).
-    const user = await getUserById(userId);
-    if (!user) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-
-    const payload: StreamPayload = req.body;
-    if (!payload?.conversaId || !Array.isArray(payload.messages)) {
-      res.status(400).json({ error: "Missing conversaId or messages" });
-      return;
-    }
-
-    // POSSE DA CONVERSA (obrigatório): o conversaId vem do corpo da requisição.
-    // Sem esta checagem, um usuário autenticado grava mensagens — e faz a
-    // Excambia responder — dentro da thread de OUTRO usuário. Todo o resto da
-    // rota escreve usando este id, então a validação vem antes de qualquer
-    // gravação.
-    const daPessoa = await conversaDb.conversaPertenceAoUsuario(payload.conversaId, user.id);
-    if (!daPessoa) {
-      res.status(404).json({ error: "Conversa não encontrada" });
-      return;
-    }
-
     // Adiciona mensagem do usuário ao histórico (com marcador do anexo, sem emoji)
+    // Arquivos de mensagens anteriores (lidos ANTES de gravar a atual).
+    const anexosConversa = await conversaDb.anexosDaConversa(payload.conversaId).catch(() => []);
+
     const userMsg = payload.messages[payload.messages.length - 1];
     if (userMsg?.role === "user") {
       const persisted = payload.attachment
         ? attachmentMarker(payload.attachment.name, userMsg.content)
         : userMsg.content;
-      await conversaDb.addMessage(payload.conversaId, "user", persisted);
+      // A referência do arquivo fica na mensagem: nas próximas, as tools ainda
+      // conseguem vincular e reler o documento. Só chaves do próprio usuário.
+      const ref = payload.attachment?.fileKey?.startsWith(`quotations/${user.id}/`)
+        ? [{ name: "anexo", ok: true, data: { fileKey: payload.attachment.fileKey, name: payload.attachment.name, mimeType: payload.attachment.mimeType } }]
+        : undefined;
+      await conversaDb.addMessage(payload.conversaId, "user", persisted, undefined, ref);
     }
 
     // Se houver anexo, transforma a última mensagem em conteúdo multimodal.
     const agentMessages = await applyAttachmentToMessages(
       payload.messages as Message[],
       payload.attachment,
+      user.id,
     );
 
     // Enriquecimento automático — FORA do caminho crítico: rodava ANTES do
@@ -148,7 +111,22 @@ router.post("/api/chat/stream", async (req: Request, res: Response) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
+    // nginx bufferiza respostas por padrão — e um SSE bufferizado chega todo
+    // de uma vez no fim, ou não chega.
+    res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders?.();
+    const perfHeadersAt = performance.now();
+
+    // SINAL DE VIDA. Enquanto uma ferramenta trabalha, o stream fica em
+    // silêncio, e proxies (nginx, Cloudflare) derrubam conexões ociosas por
+    // volta de 60–100 s. O navegador então mostra falha mesmo com o servidor
+    // ainda processando — foi o caso do "porcelanato 80x80". Um comentário SSE
+    // a cada 15 s mantém a conexão aberta; os leitores do cliente ignoram
+    // qualquer linha que não comece com "data: ".
+    const sinalDeVida = setInterval(() => {
+      if (!res.writableEnded) res.write(": ping\n\n");
+    }, 15_000);
+    res.on("close", () => clearInterval(sinalDeVida));
 
     let fullReply = "";
     let toolsUsed: string[] = [];
@@ -168,7 +146,9 @@ router.post("/api/chat/stream", async (req: Request, res: Response) => {
               mimeType: payload.attachment.mimeType,
             }
           : undefined,
+        anexosConversa,
       })) {
+        if (perfFirstEventAt == null) perfFirstEventAt = performance.now();
         if (chunk.type === "reply") {
           fullReply = chunk.reply;
           toolsUsed = chunk.toolsUsed;
@@ -193,10 +173,25 @@ router.post("/api/chat/stream", async (req: Request, res: Response) => {
         toolResults,
       );
 
+      const perfFinishedAt = performance.now();
+      console.info("[perf:chat]", {
+        prepMs: Math.round(perfHeadersAt - perfStartedAt),
+        firstEventMs: perfFirstEventAt == null ? null : Math.round(perfFirstEventAt - perfStartedAt),
+        totalMs: Math.round(perfFinishedAt - perfStartedAt),
+        toolsUsed: toolsUsed.length,
+        hadAttachment: Boolean(payload.attachment),
+      });
+
       res.write('data: {"type":"done"}\n\n');
       res.end();
     } catch (err) {
       console.error("[chatStream] erro no stream:", err);
+      console.info("[perf:chat]", {
+        failed: true,
+        totalMs: Math.round(performance.now() - perfStartedAt),
+        firstEventMs: perfFirstEventAt == null ? null : Math.round(perfFirstEventAt - perfStartedAt),
+        hadAttachment: Boolean(payload.attachment),
+      });
       // Mesmo em erro, responde e PERSISTE — a conversa não pode ficar muda.
       // Diagnostica o tipo do erro para a mensagem ser ACIONÁVEL na própria tela.
       const fallback = diagnoseError(err);
@@ -210,7 +205,8 @@ router.post("/api/chat/stream", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[chatStream] erro geral:", err);
     if (!res.headersSent) {
-      res.status(500).json({ error: "Internal server error" });
+      const code=(err as {code?:string}).code;
+      res.status(code==='TOO_MANY_REQUESTS'?429:code==='NOT_FOUND'?404:code==='FORBIDDEN'?403:500).json({error:'Não foi possível processar a solicitação.'});
     } else {
       res.end();
     }

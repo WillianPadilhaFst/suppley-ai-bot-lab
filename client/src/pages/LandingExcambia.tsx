@@ -1,14 +1,15 @@
 /**
  * LandingExcambia — Flagship Interactive Landing Page SUPPLEY & Excambia
  *
- * Arquitetura de alta interatividade & motion:
+ * Arquitetura de alta interatividade & motion alinhada à baseline de produção (`release/public-chat`):
  * - Unicorn Studio SDK oficial (`unicornstudio/react` v2.6.1) com shader WebGL2
  *   reativo a cursor e clique ("Suppley Aurora" no Hero e "Suppley Purple" no CTA final).
  * - Framer Motion v12: `MaskLineReveal`, frase cinética rotativa, `TiltSpotlightCard`,
- *   `MagneticButton` com sheen, `VelocityMarquee` reativo à velocidade de scroll,
- *   `ScrollProgressBar`, `LiveSpringNumber` e `StickyJourneyWithRouteMap`.
- * - Conexão real com backend SUPPLEY via `trpc.exchange.getRate` (PTAX USD/EUR)
- *   + `useAuth` + `/login` + `RequestAccessModal` pré-preenchido pelas simulações.
+ *   `MagneticButton` com sheen, `VelocityMarquee`, `ScrollProgressBar`, `LiveSpringNumber`
+ *   e `StickyJourneyWithRouteMap`.
+ * - Integrada às rotas oficiais já existentes em produção: `/register` (solicitação de
+ *   cadastro com aprovação administrativa), `/login` e `/excambia` (via `useAuth` / `auth.me`),
+ *   sem chamar APIs internas bloqueadas pela política de segurança pública.
  */
 import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -43,7 +44,6 @@ import {
   useScrolled,
 } from "@/components/motion/MotionPrimitives";
 import UnicornShaderCanvas from "@/components/motion/UnicornShaderCanvas";
-import RequestAccessModal from "@/components/excambia/RequestAccessModal";
 import {
   HeroExcambiaTerminal,
   InteractiveBeforeAfterCurtain,
@@ -53,7 +53,6 @@ import {
 } from "@/components/excambia/LandingInteractiveModules";
 import { EASE_EDITORIAL, SPRING_GENTLE } from "@/lib/motion";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
 
 const HERO_CYCLING_PHRASES = [
   "na Excambia.",
@@ -135,23 +134,13 @@ export default function LandingExcambia() {
   const { user, isAuthenticated } = useAuth();
   const scrolled = useScrolled(32);
 
-  // Live Exchange Rate Connection from SUPPLEY Backend (trpc.exchange.getRate)
-  const { data: usdRateData } = trpc.exchange.getRate.useQuery(
-    { from: "USD", to: "BRL" },
-    { staleTime: 5 * 60 * 1000, refetchOnWindowFocus: false, retry: false }
-  );
-  const { data: eurRateData } = trpc.exchange.getRate.useQuery(
-    { from: "EUR", to: "BRL" },
-    { staleTime: 5 * 60 * 1000, refetchOnWindowFocus: false, retry: false }
-  );
-
-  const usdRate = usdRateData?.rate ?? 5.48;
-  const eurRate = eurRateData?.rate ?? 5.96;
+  // Reference exchange rates for public interactive simulator (keeps anonymous UI
+  // strictly within `server/security/policy.ts` anonymous allowlist without hitting internal APIs)
+  const usdRate = 5.89;
+  const eurRate = 6.47;
 
   const [phraseIdx, setPhraseIdx] = useState(0);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
-  const [accessModalOpen, setAccessModalOpen] = useState(false);
-  const [modalDefaultNote, setModalDefaultNote] = useState("");
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -160,9 +149,8 @@ export default function LandingExcambia() {
     return () => window.clearInterval(id);
   }, []);
 
-  const handleOpenAccess = (note = "") => {
-    setModalDefaultNote(note);
-    setAccessModalOpen(true);
+  const handleOpenAccess = (_note = "") => {
+    setLocation(isAuthenticated && user ? "/excambia" : "/register");
   };
 
   return (
@@ -773,12 +761,6 @@ export default function LandingExcambia() {
             </div>
           </div>
         </footer>
-
-        <RequestAccessModal
-          open={accessModalOpen}
-          onClose={() => setAccessModalOpen(false)}
-          defaultNote={modalDefaultNote}
-        />
       </div>
     </MotionProvider>
   );

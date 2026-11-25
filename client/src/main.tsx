@@ -84,38 +84,47 @@ const trpcClient = trpc.createClient({
   ],
 });
 
-// Remove Manus badge/watermark dynamically
-const removeManusBadge = () => {
-  const allElements = document.querySelectorAll('a, div, span');
-  allElements.forEach(el => {
+// Remove apenas badges/links do Manus quando eles forem inseridos.
+// Evita varrer document.querySelectorAll("*") a cada mutação do React, o que
+// causava trabalho O(n) contínuo e podia gerar jank durante chat/streaming.
+const hideManusBadge = (root: ParentNode) => {
+  const candidates: Element[] = [];
+
+  if (root instanceof Element) {
+    candidates.push(root);
+  }
+
+  candidates.push(
+    ...Array.from(
+      root.querySelectorAll?.('a[href*="manus.im"], a[href*="manus.app"]') ?? []
+    )
+  );
+
+  for (const el of candidates) {
     const rawHref = (el as HTMLAnchorElement).href;
-    const hrefStr = typeof rawHref === 'string' ? rawHref : '';
-    const directText = el.children.length === 0 ? (el.textContent ?? '') : '';
+    const href = typeof rawHref === "string" ? rawHref : "";
+    const text = el.textContent ?? "";
     if (
-      directText.includes('Made with Manus') ||
-      directText.includes('Made with manus') ||
-      hrefStr.includes('manus.im') ||
-      hrefStr.includes('manus.app')
+      href.includes("manus.im") ||
+      href.includes("manus.app") ||
+      text.includes("Made with Manus") ||
+      text.includes("Made with manus")
     ) {
-      (el as HTMLElement).style.display = 'none';
-      (el as HTMLElement).style.visibility = 'hidden';
-      (el as HTMLElement).style.opacity = '0';
-      (el as HTMLElement).style.pointerEvents = 'none';
-      (el as HTMLElement).style.position = 'absolute';
-      (el as HTMLElement).style.left = '-9999px';
+      (el as HTMLElement).style.display = "none";
     }
-  });
+  }
 };
 
-// Run on load and observe for dynamic additions
-setTimeout(removeManusBadge, 100);
-setTimeout(removeManusBadge, 500);
-setTimeout(removeManusBadge, 1000);
-setTimeout(removeManusBadge, 2000);
+hideManusBadge(document);
 
-// MutationObserver to catch dynamically added badges
-const observer = new MutationObserver(() => {
-  removeManusBadge();
+const observer = new MutationObserver((mutations) => {
+  for (const mutation of mutations) {
+    for (const node of Array.from(mutation.addedNodes)) {
+      if (node instanceof Element) {
+        hideManusBadge(node);
+      }
+    }
+  }
 });
 observer.observe(document.body, { childList: true, subtree: true });
 

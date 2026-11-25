@@ -10,7 +10,7 @@
 
 -- 1) Índice em tipoEntidade para queries rápidas
 ALTER TABLE industries ADD INDEX idx_tipo_entidade (tipoEntidade);
-
+--> statement-breakpoint
 -- 2) Migrar todos os suppliers → industries como "fornecedor"
 --    IDEMPOTENTE: usa INSERT IGNORE (não duplica se já existir)
 INSERT IGNORE INTO industries (
@@ -48,6 +48,6 @@ WHERE NOT EXISTS (
     AND i.country = s.country
     AND i.tipoEntidade = 'fornecedor'
 );
-
+--> statement-breakpoint
 -- 3) (Opcional) Atualizar comentário em suppliers para marcar como deprecated
 -- ALTER TABLE suppliers COMMENT = 'DEPRECATED: use industries com tipoEntidade="fornecedor" em vez disso';

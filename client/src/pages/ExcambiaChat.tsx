@@ -13,6 +13,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 import ConversationPanel from "@/components/excambia/ConversationPanel";
 import ParameterExtractionModal from "@/components/excambia/ParameterExtractionModal";
@@ -21,6 +22,7 @@ import { MessageContent } from "@/components/MessageContent";
 import ExcambiaOrb from "@/components/ExcambiaOrb";
 import { STAGE_ORDER, STAGE_LABELS } from "@/lib/stageLabels";
 import { getMarcoLabel } from "@/lib/marcoLabels";
+import { visiblePendingMessages, type PendingMessage } from "@/lib/chatPending";
 
 const ALLOWED_UPLOAD_TYPES = [
   "application/pdf",
@@ -124,6 +126,51 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+interface AnexoPendente {
+  nome: string;
+  mimeType: string;
+  tamanho: number;
+  /** URL local (object URL) para miniatura de imagem. */
+  preview?: string;
+  status: "carregando" | "pronto" | "erro";
+  up?: { fileUrl: string; fileKey: string };
+}
+
+function formatarTamanho(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / 1024 / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB`;
+}
+
+/** Arquivo pronto para enviar junto da próxima mensagem — nada sai antes do clique em enviar. */
+function AnexoPreview({ anexo, onRemove }: { anexo: AnexoPendente; onRemove: () => void }) {
+  const legenda =
+    anexo.status === "carregando" ? "Carregando…"
+    : anexo.status === "erro" ? "Falha ao carregar — remova e tente de novo"
+    : `${formatarTamanho(anexo.tamanho)} · pronto para enviar`;
+  return (
+    <div className="mb-2 flex max-w-full items-center gap-2.5 rounded-xl border border-(--hair) bg-(--exc-card) p-2 pr-2.5 w-fit">
+      {anexo.preview ? (
+        <img src={anexo.preview} alt="" className="h-10 w-10 flex-shrink-0 rounded-lg object-cover" />
+      ) : (
+        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600">
+          {/sheet|excel|csv/.test(anexo.mimeType) ? <FileSpreadsheet className="h-5 w-5" /> : <FileText className="h-5 w-5" />}
+        </span>
+      )}
+      <span className="min-w-0">
+        <span className="block max-w-[14rem] truncate text-[13px] font-medium text-(--ink) sm:max-w-xs">{anexo.nome}</span>
+        <span className={`flex items-center gap-1 text-[11px] ${anexo.status === "erro" ? "text-rose-600" : "text-(--ink-2)"}`}>
+          {anexo.status === "carregando" && <Loader2 className="h-3 w-3 animate-spin" />}
+          {legenda}
+        </span>
+      </span>
+      <button type="button" onClick={onRemove} title="Remover anexo"
+        className="ml-1 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-(--ink-2) hover:bg-(--paper) hover:text-rose-600">
+        <XIcon className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
 // Ícone oficial SUPPLEY (símbolo recortado do logo, fundo transparente)
 const LogoIcon = ({ className }: { className?: string }) => (
   <img src="/suppley-icon.png" alt="Excambia" className={className ?? "h-full w-full object-contain"} />
@@ -161,13 +208,20 @@ export default function ExcambiaChat() {
   );
   const [draft, setDraft] = useState("");
   // Mensagens do usuário exibidas na hora (optimistic UI), antes da resposta.
-  const [optimistic, setOptimistic] = useState<Array<{ id: string; content: string }>>([]);
-  const [uploading, setUploading] = useState(false);
+  const [optimistic, setOptimistic] = useState<PendingMessage[]>([]);
+  // Anexo em preparação: carrega ao escolher, mas só vai junto quando o
+  // usuário clicar em enviar (antes, escolher o arquivo já disparava a análise).
+  const [anexo, setAnexo] = useState<AnexoPendente | null>(null);
+  const anexoTokenRef = useRef(0);
   const [paramModalOpen, setParamModalOpen] = useState(false);
   const [collectedParams, setCollectedParams] = useState<any>(null);
   const [streaming, setStreaming] = useState(false);
   const [streamingReply, setStreamingReply] = useState("");
   const [streamingEvents, setStreamingEvents] = useState<Array<any>>([]);
+  // Trava síncrona: React state só atualiza no próximo render. Sem esta ref,
+  // dois cliques/Enters muito rápidos podem atravessar o guard antes de
+  // setStreaming(true) e disparar duas chamadas à IA.
+  const sendLockRef = useRef(false);
   const utils = trpc.useUtils();
 
   const create = trpc.conversas.create.useMutation({
@@ -240,15 +294,21 @@ export default function ExcambiaChat() {
     return { id: res.id, operacaoId: undefined };
   }
 
-  async function handleSend() {
-    if (streaming || uploading) return; // evita duplo envio (clique duplo / Enter repetido)
-    const text = draft.trim();
-    if (!text) return;
+  async function handleSend(textoPronto?: string) {
+    if (sendLockRef.current || streaming || anexo?.status === "carregando") return;
+    const text = (textoPronto ?? draft).trim();
+    // Anexo só vai junto quando o usuário envia — e só depois de carregado.
+    const anexoEnviado = textoPronto === undefined && anexo?.status === "pronto" ? anexo : null;
+    if (!text && !anexoEnviado) return;
+    sendLockRef.current = true;
     setDraft("");
+    if (anexoEnviado) setAnexo(null);
+    const conteudo = anexoEnviado ? `Anexo: ${anexoEnviado.nome}${text ? `\n\n${text}` : ""}` : text;
     const optId = `opt-${Date.now()}`;
-    setOptimistic((prev) => [...prev, { id: optId, content: text }]);
+    setOptimistic((prev) => [...prev, { id: optId, content: conteudo, conversationId: activeId, previousIds: mensagens.map(m => m.id) }]);
     try {
-      const { id, operacaoId } = await ensureConversa(text);
+      const { id, operacaoId } = await ensureConversa(text || anexoEnviado?.nome || "Nova conversa");
+      setOptimistic(prev => prev.map(o => o.id === optId ? { ...o, conversationId: id } : o));
       const messages = [...buildHistory(), { role: "user" as const, content: text }];
 
       setStreaming(true);
@@ -262,6 +322,11 @@ export default function ExcambiaChat() {
           conversaId: id,
           messages,
           ...(operacaoId ? { operacaoId } : {}),
+          // fileKey = chave permanente no storage: o agente vincula o arquivo
+          // à proforma que catalogar (a url pré-assinada expira em ~1h).
+          ...(anexoEnviado?.up
+            ? { attachment: { url: anexoEnviado.up.fileUrl, fileKey: anexoEnviado.up.fileKey, mimeType: anexoEnviado.mimeType, name: anexoEnviado.nome } }
+            : {}),
         }),
       });
 
@@ -314,14 +379,17 @@ export default function ExcambiaChat() {
       setStreaming(false);
       setStreamingReply("");
       setStreamingEvents([]);
+      if (anexoEnviado?.preview) URL.revokeObjectURL(anexoEnviado.preview);
     } catch (err: any) {
       console.error("Falha ao enviar mensagem:", err);
       setDraft(text);
+      if (anexoEnviado) setAnexo(anexoEnviado);
       setStreaming(false);
       setStreamingReply("");
       setStreamingEvents([]);
       toast.error("Não foi possível enviar a mensagem. Tente novamente.");
     } finally {
+      sendLockRef.current = false;
       setOptimistic((prev) => prev.filter((o) => o.id !== optId));
     }
   }
@@ -346,7 +414,9 @@ export default function ExcambiaChat() {
     if (file) await processFile(file);
   }
 
+  /** Carrega o arquivo e o deixa PRONTO no composer; quem envia é o usuário. */
   async function processFile(file: File) {
+    if (streaming || anexo?.status === "carregando") return;
     const nome = file.name.toLowerCase();
     const extOk = ALLOWED_UPLOAD_EXTS.some((ext) => nome.endsWith(ext));
     if (!ALLOWED_UPLOAD_TYPES.includes(file.type) && !extOk) {
@@ -359,94 +429,42 @@ export default function ExcambiaChat() {
     }
 
     const mimeType = file.type || mimeFromName(nome);
-    const text = draft.trim();
-    setDraft("");
-    const optId = `opt-${Date.now()}`;
-    setOptimistic((prev) => [
-      ...prev,
-      { id: optId, content: `Anexo: ${file.name}${text ? `\n\n${text}` : ""}` },
-    ]);
-    setUploading(true);
+    // Print colado vem como "image.png": dá um nome que se reconhece no histórico.
+    const nomeExibido = file.name && file.name !== "image.png"
+      ? file.name
+      : `Captura ${new Date().toLocaleString("pt-BR").replace(/[/:]/g, "-")}.png`;
+    if (anexo?.preview) URL.revokeObjectURL(anexo.preview);
+    const preview = mimeType.startsWith("image/") ? URL.createObjectURL(file) : undefined;
+    const token = Date.now();
+    anexoTokenRef.current = token;
+    setAnexo({ nome: nomeExibido, mimeType, tamanho: file.size, preview, status: "carregando" });
+    taRef.current?.focus();
     try {
-      const { id, operacaoId } = await ensureConversa(file.name);
       const base64 = await fileToBase64(file);
-      const up = await upload.mutateAsync({
-        fileName: file.name,
-        fileData: base64,
-        contentType: mimeType,
-      });
-
-      setStreaming(true);
-      setStreamingReply("");
-      setStreamingEvents([]);
-
-      const messages = [...buildHistory(), { role: "user" as const, content: text }];
-      const response = await fetch("/api/chat/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          conversaId: id,
-          messages,
-          ...(operacaoId ? { operacaoId } : {}),
-          // fileKey = chave permanente no storage: o agente vincula o arquivo
-          // à proforma que catalogar (a url pré-assinada expira em ~1h).
-          attachment: { url: up.fileUrl, fileKey: up.fileKey, mimeType, name: file.name },
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Stream failed: ${response.statusText}`);
-      }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let finalReply = "";
-
-      if (!reader) throw new Error("No response body");
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const chunk = JSON.parse(line.slice(6));
-            if (chunk.type === "reply") {
-              finalReply = chunk.reply ?? "";
-            } else if (chunk.type !== "done") {
-              setStreamingEvents((prev) => [...prev, chunk]);
-            }
-          } catch {
-            // malformed JSON, skip
-          }
-        }
-      }
-
-      // ENTREGA FLUIDA: resposta pronta entra com fade/subida (CSS); persistida
-      // substitui em paralelo, sem gap.
-      setStreamingReply(finalReply);
-      await utils.conversas.get.invalidate({ id });
-      utils.conversas.list.invalidate();
-      refreshPainel(operacaoId);
-      setStreaming(false);
-      setStreamingReply("");
-      setStreamingEvents([]);
-    } catch (err: any) {
-      console.error("Falha ao enviar anexo:", err);
-      setStreaming(false);
-      setStreamingReply("");
-      setStreamingEvents([]);
-      toast.error("Não foi possível processar o anexo. Tente novamente.");
-    } finally {
-      setUploading(false);
-      setOptimistic((prev) => prev.filter((o) => o.id !== optId));
+      const up = await upload.mutateAsync({ fileName: nomeExibido, fileData: base64, contentType: mimeType });
+      // Ignora o resultado se o usuário removeu ou trocou o arquivo no meio do caminho.
+      if (anexoTokenRef.current !== token) return;
+      setAnexo((atual) => (atual ? { ...atual, status: "pronto", up: { fileUrl: up.fileUrl, fileKey: up.fileKey } } : atual));
+    } catch (err) {
+      console.error("Falha ao carregar anexo:", err);
+      if (anexoTokenRef.current !== token) return;
+      setAnexo((atual) => (atual ? { ...atual, status: "erro" } : atual));
+      toast.error("Não foi possível carregar o arquivo. Tente de novo.");
     }
+  }
+
+  function removerAnexo() {
+    anexoTokenRef.current = 0;
+    if (anexo?.preview) URL.revokeObjectURL(anexo.preview);
+    setAnexo(null);
+  }
+
+  // Colar print (Ctrl/Cmd+V) direto no campo de texto.
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const file = Array.from(e.clipboardData?.files ?? [])[0];
+    if (!file) return;
+    e.preventDefault();
+    void processFile(file);
   }
 
   // Arrastar-e-soltar arquivo no chat (reaproveita o mesmo processFile do botão).
@@ -454,18 +472,21 @@ export default function ExcambiaChat() {
   function handleDragOver(e: React.DragEvent) {
     if (!Array.from(e.dataTransfer.types ?? []).includes("Files")) return;
     e.preventDefault();
-    if (!uploading && !streaming) setDragOver(true);
+    if (!streaming) setDragOver(true);
   }
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragOver(false);
-    if (uploading || streaming) return;
+    if (streaming) return;
     const file = e.dataTransfer.files?.[0];
     if (file) void processFile(file);
   }
 
   const mensagens = conv?.mensagens ?? [];
-  const vazio = mensagens.length === 0 && optimistic.length === 0;
+  const pendingMessages = visiblePendingMessages(optimistic, mensagens, activeId);
+  const vazio = mensagens.length === 0 && pendingMessages.length === 0;
+  const podeEnviar = !streaming && anexo?.status !== "carregando" &&
+    (draft.trim().length > 0 || anexo?.status === "pronto");
 
   return (
     <div className="relative flex h-full w-full">
@@ -504,7 +525,9 @@ export default function ExcambiaChat() {
             estado vazio/home; com mensagens o fundo fica liso (--paper) */}
         <div ref={scrollRef} className={`flex flex-1 flex-col items-center overflow-y-auto scrollbar-custom min-h-0 ${vazio ? "chat-stage" : ""}`}>
           {vazio ? (
-            <Welcome onPick={(t) => setDraft(t)} />
+            <Welcome
+              onPick={(t) => { setDraft(t); taRef.current?.focus(); }}
+            />
           ) : (
             <div className="flex w-full max-w-full sm:max-w-2xl lg:max-w-3xl xl:max-w-4xl shrink-0 flex-col gap-4 sm:gap-6 px-3 sm:px-6 pt-4 sm:pt-6 pb-2">
               {mensagens.map((m: any, i: number) => {
@@ -524,10 +547,10 @@ export default function ExcambiaChat() {
                   </React.Fragment>
                 );
               })}
-              {optimistic.map((o) => (
+              {pendingMessages.map((o) => (
                 <Message key={o.id} role="user" content={o.content} criadaEm={new Date()} />
               ))}
-              {(streaming || uploading) && (
+              {streaming && (
                 streamingReply ? (
                   // Entrega fluida: a resposta pronta entra com fade/subida suave.
                   <div className="excambia-reveal">
@@ -544,6 +567,7 @@ export default function ExcambiaChat() {
         {/* composer — fixo no rodapé (não encolhe) */}
         <div className="flex w-full flex-shrink-0 justify-center bg-gradient-to-t from-(--paper) px-3 sm:px-6 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-6 pt-2.5 sm:pt-3.5">
           <div className="w-full max-w-full sm:max-w-2xl lg:max-w-3xl xl:max-w-4xl">
+            {anexo && <AnexoPreview anexo={anexo} onRemove={removerAnexo} />}
             <div className="flex items-end gap-2 sm:gap-2.5 rounded-[18px] border border-(--hair) bg-(--exc-card) p-2 sm:p-2.5 pl-3 sm:pl-4 shadow-[0_4px_20px_rgba(49,18,96,0.05)] transition-colors focus-within:border-violet-500 focus-within:shadow-[0_4px_24px_rgba(104,42,186,0.12)]">
               <input
                 ref={fileInputRef}
@@ -555,20 +579,16 @@ export default function ExcambiaChat() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={uploading || streaming}
+                disabled={anexo?.status === "carregando" || streaming}
                 title="Anexar documento (PDF/DOCX/TXT), planilha (XLSX/CSV), imagem ou código/dados (JSON/PY)"
                 className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg text-(--ink-2) hover:bg-(--paper) hover:text-violet-600 flex-shrink-0 disabled:opacity-50"
               >
-                {uploading ? (
-                  <Loader2 className="h-4 w-4 sm:h-[18px] sm:w-[18px] animate-spin" />
-                ) : (
-                  <Paperclip className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
-                )}
+                <Paperclip className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
               </button>
               <button
                 type="button"
                 onClick={() => setParamModalOpen(true)}
-                disabled={uploading || streaming}
+                disabled={streaming}
                 title="Extrair parâmetros de cálculo (regime, estado, câmbio, frete)"
                 className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg text-(--ink-2) hover:bg-(--paper) hover:text-violet-600 flex-shrink-0 disabled:opacity-50"
               >
@@ -577,12 +597,13 @@ export default function ExcambiaChat() {
               <textarea
                 ref={taRef}
                 value={draft} onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!streaming && !uploading) handleSend(); } }}
-                rows={1} placeholder="Escreva para a Excambia…"
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (podeEnviar) handleSend(); } }}
+                onPaste={handlePaste}
+                rows={1} placeholder={anexo ? "Diga o que fazer com o arquivo (opcional)…" : "Escreva para a Excambia…"}
                 className="flex-1 resize-none bg-transparent py-1.5 text-base sm:text-[14px] leading-relaxed text-(--ink) outline-none placeholder:text-(--ink-2) max-h-[200px] overflow-y-auto scrollbar-custom"
               />
-              <button onClick={handleSend}
-                disabled={streaming || uploading || !draft.trim()}
+              <button onClick={() => handleSend()}
+                disabled={!podeEnviar}
                 className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-[10px] bg-violet-600 text-white hover:bg-violet-700 flex-shrink-0 disabled:opacity-40 disabled:hover:bg-violet-600">
                 {streaming ? (
                   <Loader2 className="h-4 w-4 sm:h-[18px] sm:w-[18px] animate-spin" />
@@ -655,18 +676,24 @@ function OperacaoContextBar({ operacaoId }: { operacaoId: number }) {
   );
 }
 
+// Casos prontos que ENVIAM na hora: quem chega pela primeira vez (ex.: um
+// investidor testando) não sabe o que perguntar e sai sem digitar nada.
+// Cada caso exercita uma capacidade diferente: custo + defesa comercial por
+// origem, custo de carga pesada, comparação de fornecedores da base.
 function Welcome({ onPick }: { onPick: (t: string) => void }) {
+  const { user } = useAuth();
+  const primeiroNome = user?.name?.trim().split(/\s+/)[0];
   return (
-    <div className="flex flex-1 flex-col items-center justify-center px-3 sm:px-6 py-8 sm:py-12 text-center min-h-0">
+    <div className="flex flex-1 flex-col items-center justify-center px-4 sm:px-6 py-8 sm:py-12 text-center min-h-0">
       <span className="mb-4 sm:mb-5 flex-shrink-0">
         <ExcambiaOrb size={48} />
       </span>
       <h1 className="mb-2 sm:mb-2.5 text-xl sm:text-2xl md:text-[26px] font-semibold tracking-tight text-(--ink)">
-        Olá, Jean. O que vamos{" "}
+        {primeiroNome ? `Olá, ${primeiroNome}. ` : "Olá. "}O que vamos{" "}
         <span className="bg-gradient-to-r from-violet-600 to-teal-600 bg-clip-text text-transparent">importar</span> hoje?
       </h1>
-      <p className="mb-6 sm:mb-7 max-w-xs sm:max-w-sm text-sm sm:text-[14px] leading-relaxed text-(--ink-2)">
-        Descreva o que precisa, suba uma cotação ou abra uma operação na lista ao lado.
+      <p className="mb-6 sm:mb-7 max-w-md text-sm sm:text-[14px] leading-relaxed text-(--ink-2)">
+        Diga o produto. Eu entrego custo posto no Brasil, impostos, riscos e o preço-alvo para negociar.
       </p>
       <div className="flex w-full max-w-xs sm:max-w-sm flex-col gap-2 sm:gap-2.5">
         <Suggestion icon={<Plus />} title="Nova importação" sub="descrever um produto ou subir um PDF"

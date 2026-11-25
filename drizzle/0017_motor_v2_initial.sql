@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS demandas (
   atualizadaEm TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,
   INDEX idx_demandas_user (userId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS operacoes (
   id INT AUTO_INCREMENT PRIMARY KEY,
   userId INT NOT NULL,
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS operacoes (
   INDEX idx_operacoes_stage (estagioAtual),
   INDEX idx_operacoes_codigo (codigo)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS operacao_eventos (
   id INT AUTO_INCREMENT PRIMARY KEY,
   operacaoId INT NOT NULL,
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS operacao_eventos (
   criadoEm TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
   INDEX idx_eventos_operacao (operacaoId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS operacao_estagios (
   id INT AUTO_INCREMENT PRIMARY KEY,
   operacaoId INT NOT NULL,
@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS operacao_estagios (
   gateChecklist JSON,
   INDEX idx_estagios_operacao (operacaoId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
+--> statement-breakpoint
 -- ============================================================
 -- MARKET INTELLIGENCE SCHEMA
 -- ============================================================
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS market_reference_ncm (
   UNIQUE KEY uq_market_ref (ncmCode, flow, countryCode, periodFrom, periodTo),
   INDEX idx_market_ref_ncm (ncmCode)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS market_trend_ncm (
   id INT AUTO_INCREMENT PRIMARY KEY,
   ncmCode VARCHAR(8) NOT NULL,
@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS market_trend_ncm (
   UNIQUE KEY uq_market_trend (ncmCode, flow, yearMonth),
   INDEX idx_market_trend_ncm (ncmCode)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS etl_runs (
   id INT AUTO_INCREMENT PRIMARY KEY,
   job VARCHAR(60) NOT NULL,
@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS etl_runs (
   startedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
   finishedAt TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
+--> statement-breakpoint
 -- ============================================================
 -- MIGRATION STATUS
 -- ============================================================

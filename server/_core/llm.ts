@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { ENV } from "./env";
 import { recordLlmUsage } from "../db/usageDb";
 
@@ -196,6 +197,8 @@ export type InvokeResult = {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    cache_creation_input_tokens: number;
+    cache_read_input_tokens: number;
   };
 };
 
@@ -672,6 +675,8 @@ async function invokeDeepSeek(params: InvokeParams): Promise<InvokeResult> {
           prompt_tokens: result.usage.prompt_tokens,
           completion_tokens: result.usage.completion_tokens,
           total_tokens: result.usage.total_tokens,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: result.usage.prompt_cache_hit_tokens ?? 0,
         }
       : undefined,
   };
@@ -888,6 +893,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   // Chamar API Anthropic
+  const perfStartedAt = performance.now();
+  let perfRetriedWithoutThinking = false;
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "x-api-key": ENV.anthropicApiKey!,
@@ -909,6 +916,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   // thinking antes de desistir — uma análise complexa não pode deixar o chat
   // mudo por causa de uma incompatibilidade pontual do recurso.
   if (!response.ok && thinkingEnabled) {
+    perfRetriedWithoutThinking = true;
     const retryPayload = { ...payload };
     delete retryPayload.thinking;
     retryPayload.max_tokens = requestedMax;
@@ -920,6 +928,15 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   if (!response.ok) {
+    console.info("[perf:llm]", {
+      model: modeloAtual,
+      totalMs: Math.round(performance.now() - perfStartedAt),
+      status: response.status,
+      thinking: thinkingEnabled,
+      webSearch: Boolean(webSearch),
+      retriedWithoutThinking: perfRetriedWithoutThinking,
+      maxTokens: payload.max_tokens,
+    });
     const errorText = await response.text();
     throw new Error(
       `LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`
@@ -927,16 +944,34 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   const result = await response.json() as any;
+  console.info("[perf:llm]", {
+    model: result.model ?? modeloAtual,
+    totalMs: Math.round(performance.now() - perfStartedAt),
+    status: response.status,
+    thinking: thinkingEnabled,
+    webSearch: Boolean(webSearch),
+    retriedWithoutThinking: perfRetriedWithoutThinking,
+    maxTokens: payload.max_tokens,
+    inputTokens: result.usage?.input_tokens ?? null,
+    outputTokens: result.usage?.output_tokens ?? null,
+  });
 
-  // Medição de tokens/custo (fire-and-forget; inclui cache read/write).
+  // Aguarda a gravação para que o painel já possa consultar o uso ao fim da chamada.
+  // Falhas de medição não interrompem a resposta, mas ficam visíveis sem segredos.
   if (result.usage) {
-    void recordLlmUsage({
-      model: result.model ?? (model || MODELS.smart),
-      promptTokens: result.usage.input_tokens ?? 0,
-      completionTokens: result.usage.output_tokens ?? 0,
-      cacheCreationTokens: result.usage.cache_creation_input_tokens ?? 0,
-      cacheReadTokens: result.usage.cache_read_input_tokens ?? 0,
-    }).catch(() => {});
+    try {
+      await recordLlmUsage({
+        model: result.model ?? (model || MODELS.smart),
+        promptTokens: result.usage.input_tokens ?? 0,
+        completionTokens: result.usage.output_tokens ?? 0,
+        cacheCreationTokens: result.usage.cache_creation_input_tokens ?? 0,
+        cacheReadTokens: result.usage.cache_read_input_tokens ?? 0,
+      });
+    } catch {
+      console.warn("[usage:record-failed]", { model: result.model ?? modeloAtual });
+    }
+  } else {
+    console.warn("[usage:missing]", { model: result.model ?? modeloAtual });
   }
 
   // Converter resposta Anthropic para formato genérico InvokeResult
@@ -996,9 +1031,12 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     ],
     usage: result.usage
       ? {
-          prompt_tokens: result.usage.input_tokens,
-          completion_tokens: result.usage.output_tokens,
-          total_tokens: result.usage.input_tokens + result.usage.output_tokens,
+          prompt_tokens: result.usage.input_tokens ?? 0,
+          completion_tokens: result.usage.output_tokens ?? 0,
+          cache_creation_input_tokens: result.usage.cache_creation_input_tokens ?? 0,
+          cache_read_input_tokens: result.usage.cache_read_input_tokens ?? 0,
+          total_tokens: (result.usage.input_tokens ?? 0) + (result.usage.output_tokens ?? 0)
+            + (result.usage.cache_creation_input_tokens ?? 0) + (result.usage.cache_read_input_tokens ?? 0),
         }
       : undefined,
   };

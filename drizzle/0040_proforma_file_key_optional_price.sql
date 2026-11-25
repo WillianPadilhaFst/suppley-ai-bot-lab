@@ -21,17 +21,29 @@ SET @col_exists := (
   SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'proformas' AND COLUMN_NAME = 'fileKey'
 );
+--> statement-breakpoint
 SET @ddl := IF(@col_exists = 0,
   'ALTER TABLE proformas ADD COLUMN fileKey VARCHAR(512) NULL AFTER fileUrl',
   'SELECT 1 /* proformas.fileKey já existe */');
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
+--> statement-breakpoint
+PREPARE stmt FROM @ddl;
+--> statement-breakpoint
+EXECUTE stmt;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt;
+--> statement-breakpoint
 -- 2) proforma_items.unitPriceCents → NULLable (idempotente: só altera se ainda for NOT NULL)
 SET @is_nullable := (
   SELECT IS_NULLABLE FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'proforma_items' AND COLUMN_NAME = 'unitPriceCents'
 );
+--> statement-breakpoint
 SET @ddl2 := IF(@is_nullable = 'NO',
   'ALTER TABLE proforma_items MODIFY COLUMN unitPriceCents BIGINT NULL',
   'SELECT 1 /* proforma_items.unitPriceCents já aceita NULL */');
-PREPARE stmt2 FROM @ddl2; EXECUTE stmt2; DEALLOCATE PREPARE stmt2;
+--> statement-breakpoint
+PREPARE stmt2 FROM @ddl2;
+--> statement-breakpoint
+EXECUTE stmt2;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt2;

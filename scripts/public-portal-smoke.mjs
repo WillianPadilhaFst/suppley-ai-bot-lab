@@ -1,0 +1,167 @@
+// Runs against the built frontend with synthetic API fixtures, never production.
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import express from 'express';
+import rateLimit from 'express-rate-limit';
+const { chromium } = await import(pathToFileURL(path.join(process.env.SUPPLEY_PLAYWRIGHT_DIR, 'index.mjs')).href);
+const app=express();const root=path.resolve('dist/public');
+// Bound filesystem requests even on the loopback-only smoke server.
+app.use(rateLimit({ windowMs: 60_000, limit: 1000, standardHeaders: 'draft-8', legacyHeaders: false }));
+app.use(express.static(root));app.get('*',(_req,res)=>res.sendFile(path.join(root,'index.html')));
+const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
+const base=`http://127.0.0.1:${server.address().port}`;
+const user={id:1,name:'Cliente de homologação',email:'cliente@example.test',role:'public',loginMethod:'email',createdAt:'2026-11-20T00:00:00Z'};
+const operation={id:1,codigo:'OP-TEST-1',titulo:'Cotação de embalagens',status:'ativa',estagioAtual:'demand',prazoDesejado:null,trackingEta:null,criadaEm:null,atualizadaEm:null,milestones:[{id:1,tipo:'Análise de fornecimento',status:'Em andamento',dataReferencia:'2026-11-20',vencimento:null}],history:[{id:2,tipo:'operacao_criada',estagio:'demand',criadoEm:'2026-11-20'}]};
+const allowed=new Set(['auth.me','auth.login','conversas.list','portal.list','portal.get','quoteRequests.mine','auth.register','conversas.create','conversas.send','conversas.get']);
+const calls=new Set();let browser;
+async function capture(page,name){
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1), `Horizontal overflow on ${name}`);
+ await page.screenshot({path:`artifacts/public-portal/${name}.png`,fullPage:true});
+}
+try {
+ browser=await chromium.launch({headless:true});
+ await mkdir('artifacts/public-portal',{recursive:true});
+ for(const [name,viewport] of [['desktop',{width:1440,height:1000}],['mobile',{width:390,height:844}]]){
+  const context=await browser.newContext({viewport});const page=await context.newPage();
+  let registered=false;let sent=false;let loggedIn=false;
+  const example="Quero cotar 1500 embalagens de 500 ml para Navegantes.";
+  await page.route('**/api/trpc/**',async route=>{
+   const req=route.request();const url=new URL(req.url());const names=decodeURIComponent(url.pathname.split('/api/trpc/')[1]).split(',');
+   const input=JSON.parse(req.postData()??url.searchParams.get('input')??'{}');
+   const output=names.map((method,index)=>{
+    calls.add(method);
+    if(method==='auth.login'){
+     const credentials=input[index]?.json;
+     if(credentials?.email!==user.email||credentials?.password!=='Senha-de-teste-2026')return {error:{json:{message:'Credenciais inválidas',code:-32001,data:{code:'UNAUTHORIZED',httpStatus:401,path:method}}}};
+     loggedIn=true;
+     return {result:{data:{json:{success:true,user}}}};
+    }
+    if(method==='auth.register'){registered=true;return {result:{data:{json:{success:true,pendingApproval:true}}}};}
+    if(method==='conversas.create')return {result:{data:{json:{id:4}}}};
+    if(method==='conversas.send'){sent=true;return {result:{data:{json:{reply:'Solicitação #3 recebida para análise.'}}}};}
+    if(method==='conversas.get')return {result:{data:{json:{id:4,mensagens:sent?[
+     {id:1,role:'user',content:example},{id:2,role:'assistant',content:'Solicitação #3 recebida para análise.'}
+    ]:[]}}}};
+    if(method==='portal.get'&&input[index]?.json?.id!==1)return {error:{json:{message:'Operação não encontrada.',code:-32004,data:{code:'NOT_FOUND',httpStatus:404,path:method}}}};
+    const data=method==='auth.me'?user:method==='conversas.list'?{operacoes:[],avulsas:[]}:method==='quoteRequests.mine'?[{id:3,produto:'Embalagens',especificacoes:'500 ml',quantidade:'1500',unidade:'UN',destinoCidade:'Navegantes',destinoUf:'SC',prazoDesejado:'A definir',status:'recebida',operacaoId:null}]:method==='portal.list'?[operation]:method==='portal.get'?operation:null;
+    return {result:{data:{json:data}}};
+   });
+   await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(output)});
+  });
+  await page.goto(`${base}/login`);
+  const cord=page.getByRole('button',{name:'Ir para o Login',exact:true});
+  await cord.waitFor();
+  assert.equal(await cord.count(),1);
+  assert.equal(await page.getByText(/calculasuppley\.com\.br|Ambiente em espera|Suppley Raw Material|Itajaí, SC|Puxe a corda/).count(),0);
+  const heading=page.getByRole('heading',{name:'Entrar',exact:true});
+  assert.equal(await heading.isVisible(),false);
+  await capture(page,`${name}-login-off`);
+  if(name==='desktop'){
+   const bounds=await cord.boundingBox();
+   await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);
+   await page.mouse.down();
+   await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2+25,{steps:5});
+   await page.mouse.up();
+  }else{
+   await page.getByText('Ir para o Login',{exact:true}).click();
+  }
+  await heading.waitFor();
+  await capture(page,`${name}-login-on`);
+  if(name==='desktop'){
+   await page.getByRole('button',{name:'Fechar login'}).press('Enter');
+   await heading.waitFor({state:'hidden'});
+   await cord.press('Space');
+   await heading.waitFor();
+  }
+  assert.equal(await page.getByRole('link',{name:'Esqueceu a senha?'}).getAttribute('href'),'/forgot-password');
+  assert.equal(await page.getByRole('link',{name:'Solicitar cadastro'}).getAttribute('href'),'/register');
+  await page.getByLabel('E-mail',{exact:true}).fill(user.email);
+  const password=page.getByLabel('Senha',{exact:true});
+  await password.fill('senha-invalida');
+  await page.getByRole('button',{name:'Mostrar senha'}).click();
+  assert.equal(await password.getAttribute('type'),'text');
+  await page.getByRole('button',{name:'Ocultar senha'}).click();
+  assert.equal(await password.getAttribute('type'),'password');
+  await page.getByRole('button',{name:'Entrar',exact:true}).click();
+  await page.getByText('Credenciais inválidas',{exact:true}).waitFor();
+  assert.equal(loggedIn,false);
+  await password.fill('Senha-de-teste-2026');
+  await page.getByRole('button',{name:'Entrar',exact:true}).click();
+  await page.waitForURL('**/excambia');
+  await page.getByRole('heading',{name:'O que você quer importar?'}).waitFor();
+  assert.equal(loggedIn,true);
+  await page.goto(`${base}/register`);
+  await page.getByRole('heading',{name:'Crie sua conta'}).waitFor();
+  await capture(page,`${name}-registration`);
+  await page.getByPlaceholder('Seu nome').fill('Cliente de homologação');
+  await page.getByPlaceholder('seu@email.com').fill('cliente@example.test');
+  await page.getByPlaceholder('Mínimo 8 caracteres').fill('Senha-de-teste-2026');
+  await page.getByPlaceholder('Repita a senha').fill('Senha-de-teste-2026');
+  await page.getByRole('button',{name:'Criar conta',exact:true}).click();
+  await page.getByText(/Cadastro recebido. Aguarde a aprovação/).waitFor();
+  assert.equal(registered,true);
+  await capture(page,`${name}-registration-pending`);
+  await page.goto(`${base}/`);
+  await page.getByRole('heading',{name:'O que você quer importar?'}).waitFor();
+  const menu = page.getByRole('navigation',{name:'Menu principal'});
+  assert.deepEqual(await menu.getByRole('link').allTextContents(),['Excambia','Acompanhamento','Minha conta']);
+  await capture(page,`${name}-chat`);
+  await page.getByRole('button',{name:'Estimar custo de importação'}).click();
+  assert.match(await page.getByRole('textbox',{name:'Mensagem para Excambia'}).inputValue(),/Quero estimar o custo para importar/);
+  await page.getByRole('textbox',{name:'Mensagem para Excambia'}).fill(example);
+  await page.getByRole('button',{name:'Enviar',exact:true}).click();
+  await page.getByRole('article').filter({hasText:'Solicitação #3 recebida para análise.'}).waitFor();
+  assert.equal(sent,true);
+  await capture(page,`${name}-quote-conversation`);
+  await page.getByRole('navigation',{name:'Menu principal'}).getByRole('link',{name:'Acompanhamento'}).click();
+  await page.getByRole('link',{name:'OP-TEST-1 — Cotação de embalagens'}).waitFor();
+  await page.getByText('Solicitação #3 — Embalagens',{exact:true}).waitFor();
+  await page.getByText('Ver especificações',{exact:true}).click();
+  await page.getByText('500 ml',{exact:true}).waitFor();
+  await capture(page,`${name}-tracking`);
+  await page.getByRole('link',{name:'OP-TEST-1 — Cotação de embalagens'}).click();
+  await page.getByRole('heading',{name:'OP-TEST-1 — Cotação de embalagens'}).waitFor();
+  await capture(page,`${name}-operation`);
+  await page.goto(`${base}/operacao/2`);
+  await page.getByRole('alert').filter({hasText:'Operação não encontrada.'}).waitFor();
+  await page.getByRole('navigation',{name:'Menu principal'}).getByRole('link',{name:'Minha conta'}).click();
+  await page.getByLabel('Nome',{exact:true}).waitFor();
+  assert.equal(await page.getByText(/Consumo de tokens|Chave da API|Modelo de IA/).count(),0);
+  await capture(page,`${name}-account`);
+  for(const route of ['/settings','/suppliers','/proformas','/rfq','/solicitacoes']){
+   await page.goto(`${base}${route}`);
+   await page.getByText(/Página não encontrada|Page Not Found|404/).first().waitFor();
+  }
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'Horizontal overflow');
+  await context.close();
+ }
+ assert.deepEqual([...calls].filter(p=>!allowed.has(p)),[],'Public UI requested internal API');
+ const adminContext=await browser.newContext({viewport:{width:1440,height:1000}});
+ const adminPage=await adminContext.newPage();let reviewed=false;let started=false;
+ await adminPage.route('**/api/trpc/**',async route=>{
+  const url=new URL(route.request().url());const names=decodeURIComponent(url.pathname.split('/api/trpc/')[1]).split(',');
+  const output=names.map(method=>{
+   let data;
+   if(method==='auth.me')data={...user,id:10,role:'admin',name:'Administrador de homologação'};
+   else if(method==='quoteRequests.inbox')data=[{id:3,userId:1,conversaId:4,clienteNome:user.name,clienteEmail:user.email,produto:'Embalagens',especificacoes:'500 ml',quantidade:'1500',unidade:'UN',destinoCidade:'Navegantes',destinoUf:'SC',prazoDesejado:'A definir',status:started?'vinculada':reviewed?'em_analise':'recebida',operacaoId:started?1:null}];
+   else if(method==='quoteRequests.review'){reviewed=true;data={success:true};}
+   else if(method==='quoteRequests.start'){started=true;data={operacaoId:1};}
+   else throw Error(`Unexpected admin API: ${method}`);
+   return {result:{data:{json:data}}};
+  });
+  await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(output)});
+ });
+ await adminPage.goto(`${base}/solicitacoes`);
+ await adminPage.getByRole('heading',{name:'Solicitações de cotação',exact:true}).waitFor();
+ await adminPage.getByRole('button',{name:'Iniciar análise',exact:true}).click();
+ await adminPage.getByText(/Status: em analise/).waitFor();
+ assert.equal(reviewed,true);
+ await adminPage.getByRole('button',{name:'Criar operação para atendimento',exact:true}).click();
+ await adminPage.getByText(/Status: vinculada/).waitFor();
+ assert.equal(started,true);
+ await adminPage.screenshot({path:'artifacts/public-portal/admin-intake.png',fullPage:true});
+ await adminContext.close();
+ console.log('Public portal smoke passed: desktop/mobile, own operation, foreign operation, personal account, direct internal URLs, administrative intake review.');
+}finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}

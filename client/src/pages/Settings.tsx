@@ -333,6 +333,7 @@ function UsuariosTab() {
     onSuccess: () => { toast.success("Usuário removido"); utils.users.list.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
+  const approveMut = trpc.users.approve.useMutation({onSuccess:()=>{toast.success("Aprovação atualizada");void utils.users.list.invalidate();},onError:e=>toast.error(e.message)});
   const roleMut = trpc.users.updateRole.useMutation({
     onSuccess: () => { toast.success("Papel atualizado"); utils.users.list.invalidate(); },
     onError: (e) => toast.error(e.message),
@@ -429,12 +430,13 @@ function UsuariosTab() {
                       <td className="px-4 py-3">
                         <p className="font-medium text-foreground">{u.name || "—"}</p>
                         <p className="text-xs text-muted-foreground">{u.email}</p>
+                        {u.role === 'public' && <div className="flex gap-2 mt-2 items-center"><span>{u.approvalStatus}</span>{u.approvalStatus !== 'approved' && (<Button size="sm" disabled={approveMut.isPending} onClick={()=>approveMut.mutate({id:u.id,status:'approved'})}>Aprovar</Button>)}<Button size="sm" variant="outline" disabled={approveMut.isPending} onClick={()=>approveMut.mutate({id:u.id,status:'rejected'})}>Suspender</Button></div>}
                       </td>
                       <td className="px-4 py-3">
                         {u.role === "admin" ? (
                           <Badge className="gap-1 bg-purple-100 text-purple-700 hover:bg-purple-100"><Crown className="h-3 w-3" /> Administrador</Badge>
                         ) : (
-                          <Badge variant="secondary">Usuário</Badge>
+                          <Badge variant="secondary">{u.role === "public" ? "Público" : "Usuário"}</Badge>
                         )}
                       </td>
                       <td className="px-4 py-3">

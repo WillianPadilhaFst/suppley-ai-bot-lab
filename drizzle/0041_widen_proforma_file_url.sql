@@ -16,7 +16,13 @@ SET @len := (
   SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'proformas' AND COLUMN_NAME = 'fileUrl'
 );
+--> statement-breakpoint
 SET @ddl := IF(@len IS NOT NULL AND @len < 1024,
   'ALTER TABLE proformas MODIFY COLUMN fileUrl VARCHAR(1024) NULL',
   'SELECT 1 /* proformas.fileUrl já tem 1024+ (ou não existe) */');
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+--> statement-breakpoint
+PREPARE stmt FROM @ddl;
+--> statement-breakpoint
+EXECUTE stmt;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt;

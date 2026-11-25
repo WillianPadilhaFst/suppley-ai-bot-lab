@@ -24,9 +24,9 @@ CREATE TABLE `operacao_financeiro` (
   `atualizadoEm` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT `operacao_financeiro_id` PRIMARY KEY(`id`)
 );
-
+--> statement-breakpoint
 CREATE INDEX `idx_financeiro_operacao` ON `operacao_financeiro` (`operacaoId`);
-
+--> statement-breakpoint
 -- Expand operacao_eventos.tipo enum to include financial events (timeline coesion)
 ALTER TABLE `operacao_eventos` MODIFY COLUMN `tipo` enum(
   'demanda_criada','operacao_criada','rfq_enviada','cotacao_recebida',

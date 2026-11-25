@@ -1,3 +1,5 @@
+import { chatInput, validateChat } from "../security/chatInput";
+import { runPublicChat } from "../agent/publicChat";
 /**
  * Router tRPC de CONVERSAS da Excambia.
  *
@@ -111,27 +113,15 @@ export const conversasRouter = router({
 
   /** Envia mensagem e chama o orquestrador agêntico */
   send: protectedProcedure
-    .input(z.object({
-      conversaId: z.number(),
-      messages: z.array(z.object({
-        role: z.enum(["user", "assistant", "system"]),
-        content: z.string(),
-      })),
-      operacaoId: z.number().optional(),
-      estagio: z.string().optional(),
-      // Anexo opcional (PDF/imagem) já enviado ao storage. Quando presente, o
-      // arquivo é lido e encaminhado ao agente junto da última mensagem.
-      attachment: z
-        .object({
-          url: z.string(),
-          mimeType: z.string(),
-          name: z.string(),
-          // Chave permanente no storage — o agente vincula o arquivo ao que criar.
-          fileKey: z.string().optional(),
-        })
-        .optional(),
-    }))
+    .input(chatInput)
     .mutation(async ({ ctx, input }) => {
+      input = await validateChat(ctx.user, input);
+      if (ctx.user.role === 'public') {
+        await conversaDb.addMessage(input.conversaId, 'user', input.messages.at(-1)!.content);
+        const result = await runPublicChat(ctx.user, input.messages, {conversaId:input.conversaId});
+        await conversaDb.addMessage(input.conversaId, 'assistant', result.reply, result.toolsUsed, result.toolResults);
+        return result;
+      }
       // Adiciona a mensagem do usuário ao histórico (com marcador do anexo).
       const userMsg = input.messages[input.messages.length - 1];
       if (userMsg?.role === "user") {
@@ -148,7 +138,7 @@ export const conversasRouter = router({
         content: m.content,
       }));
       if (input.attachment && agentMessages.length > 0) {
-        const block = await buildAttachmentBlock(input.attachment);
+        const block = await buildAttachmentBlock(input.attachment, ctx.user.id);
         const lastIdx = agentMessages.length - 1;
         const lastText = (agentMessages[lastIdx].content as string) || "";
         if (block) {

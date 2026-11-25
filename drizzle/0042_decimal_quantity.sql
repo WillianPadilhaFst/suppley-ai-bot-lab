@@ -17,16 +17,28 @@ SET @tipo := (
   SELECT DATA_TYPE FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'proforma_items' AND COLUMN_NAME = 'quantity'
 );
+--> statement-breakpoint
 SET @ddl := IF(@tipo IS NOT NULL AND @tipo <> 'double',
   'ALTER TABLE proforma_items MODIFY COLUMN quantity DOUBLE NOT NULL',
   'SELECT 1 /* proforma_items.quantity já é DOUBLE (ou tabela não existe) */');
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
+--> statement-breakpoint
+PREPARE stmt FROM @ddl;
+--> statement-breakpoint
+EXECUTE stmt;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt;
+--> statement-breakpoint
 SET @tipo := (
   SELECT DATA_TYPE FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'supplier_prices' AND COLUMN_NAME = 'quantity'
 );
+--> statement-breakpoint
 SET @ddl := IF(@tipo IS NOT NULL AND @tipo <> 'double',
   'ALTER TABLE supplier_prices MODIFY COLUMN quantity DOUBLE NOT NULL DEFAULT 1',
   'SELECT 1 /* supplier_prices.quantity já é DOUBLE (ou tabela não existe) */');
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+--> statement-breakpoint
+PREPARE stmt FROM @ddl;
+--> statement-breakpoint
+EXECUTE stmt;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt;

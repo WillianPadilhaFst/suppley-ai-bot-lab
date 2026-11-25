@@ -1,3 +1,8 @@
+import PublicWorkspace from "./components/PublicWorkspace";
+import QuoteRequestsInbox from "./pages/QuoteRequestsInbox";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { PublicOperations, PublicOperation, MyAccount } from "./pages/PublicPortal";
+import PublicChat from "./pages/PublicChat";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { lazy, Suspense } from "react";
@@ -9,7 +14,6 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 
 // Auth Pages — login é eager (primeira pintura); o resto entra sob demanda.
 import Login from "./pages/Login";
-import { useAuth } from "./_core/hooks/useAuth";
 const Register = lazy(() => import("./pages/Register"));
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const LandingExcambia = lazy(() => import("./pages/LandingExcambia"));
@@ -52,21 +56,24 @@ function RouteFallback() {
 
 /**
  * RootGateway — Em `/`:
- * - Visitantes não autenticados veem a página pública de apresentação e simulação da Excambia (`LandingExcambia`).
- * - Usuários autenticados entram direto na Excambia (`AuthenticatedRoutes`).
+ * - Visitantes não autenticados veem a landing page pública (`LandingExcambia`).
+ * - Usuários autenticados (públicos ou internos) seguem direto para `AuthenticatedRoutes`.
  */
 function RootGateway() {
   const { user, loading } = useAuth();
-  if (loading) {
-    return <RouteFallback />;
-  }
-  if (!user) {
-    return <LandingExcambia />;
-  }
+  if (loading) return <RouteFallback />;
+  if (!user) return <LandingExcambia />;
   return <AuthenticatedRoutes />;
 }
 
 function AuthenticatedRoutes() {
+  const {user,loading}=useAuth();
+  if(loading)return <RouteFallback/>;
+  if(user?.role==='public')return <PublicWorkspace><Switch>
+    <Route path="/" component={PublicChat}/><Route path="/excambia" component={PublicChat}/>
+    <Route path="/operacoes" component={PublicOperations}/><Route path="/operacao/:id" component={PublicOperation}/>
+    <Route path="/minha-conta" component={MyAccount}/><Route component={NotFound}/>
+  </Switch></PublicWorkspace>;
   return (
     <DashboardLayout>
       <Suspense fallback={<RouteFallback />}>
@@ -82,6 +89,7 @@ function AuthenticatedRoutes() {
         <Route path="/suppliers" component={Marketplace} />
         <Route path="/products" component={Products} />
         <Route path="/settings" component={Settings} />
+        <Route path="/minha-conta" component={MyAccount} />
         <Route path="/excambia" component={ExcambiaChat} />
         <Route path="/industries" component={Marketplace} />
         <Route path="/industries/:id">{(params: any) => <IndustryDetail id={params.id} />}</Route>
@@ -91,6 +99,7 @@ function AuthenticatedRoutes() {
         <Route path="/messaging" component={Messaging} />
         <Route path="/operacoes" component={Operacoes} />
         <Route path="/operacao/:id" component={OperacaoDetail} />
+        <Route path="/solicitacoes">{() => user?.role === "admin" ? <QuoteRequestsInbox/> : <NotFound/>}</Route>
         <Route path="/proformas" component={Proformas} />
         <Route path="/parametros" component={Parametros} />
         <Route path="/memoria" component={MemoriaExcambia} />

@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS `tax_parameters` (
   UNIQUE KEY `uq_tax_parameters` (`paramKey`, `effectiveDate`),
   KEY `idx_tax_parameters_key` (`paramKey`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
+--> statement-breakpoint
 INSERT IGNORE INTO `tax_parameters`
   (`paramKey`, `label`, `category`, `unit`, `valueBp`, `valueCents`, `effectiveDate`, `legalBasis`, `notes`)
 VALUES
@@ -46,7 +46,7 @@ VALUES
   ('SISCOMEX_ADICAO', 'Taxa Siscomex — por adição',     'taxa_fixa',       'cents', NULL,  2950, '2025-01-01 00:00:00', 'Portaria MF (Siscomex)',                   'Por adição além da primeira.'),
   ('BL_LIBERATION',   'Liberação de BL',                'despesa',         'cents', NULL, 35000, '2025-01-01 00:00:00', NULL,                                       'Estimativa.'),
   ('CUSTOMS_BROKER',  'Honorários de despachante',      'despesa',         'cents', NULL, 80000, '2025-01-01 00:00:00', NULL,                                       'Estimativa.');
-
+--> statement-breakpoint
 -- ---------- 2) port_costs ----------
 CREATE TABLE IF NOT EXISTS `port_costs` (
   `id` INT NOT NULL AUTO_INCREMENT,
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS `port_costs` (
   KEY `idx_port_costs_port` (`portCode`),
   KEY `idx_port_costs_state` (`stateCode`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
+--> statement-breakpoint
 INSERT IGNORE INTO `port_costs`
   (`portCode`, `portName`, `stateCode`, `modal`, `thcCents`, `storageBp`, `liberationCents`, `effectiveDate`, `notes`)
 VALUES
@@ -98,7 +98,7 @@ VALUES
   ('BRIBB','Porto de Imbituba','SC','maritimo',110000,140,37000,'2025-01-01 00:00:00','Estimativa.'),
   ('BRRGI','Porto de Rio Grande','RS','maritimo',120000,150,40000,'2025-01-01 00:00:00','Estimativa.'),
   ('BRPOA','Porto de Porto Alegre','RS','maritimo',110000,140,37000,'2025-01-01 00:00:00','Estimativa.');
-
+--> statement-breakpoint
 -- ---------- 3) ncm_exceptions (Ex-Tarifário) ----------
 CREATE TABLE IF NOT EXISTS `ncm_exceptions` (
   `id` INT NOT NULL AUTO_INCREMENT,
@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS `ncm_exceptions` (
   UNIQUE KEY `uq_ncm_exceptions` (`ncmCode`, `exCode`),
   KEY `idx_ncm_exceptions_ncm` (`ncmCode`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
+--> statement-breakpoint
 -- Exemplos-modelo, INATIVOS (isActive=0) — não afetam cálculo até serem
 -- validados/ativados pelo usuário com a Resolução GECEX vigente.
 INSERT IGNORE INTO `ncm_exceptions`
@@ -125,7 +125,7 @@ INSERT IGNORE INTO `ncm_exceptions`
 VALUES
   ('8479.89.99','Ex 001','Modelo de Ex-Tarifário (BK) — validar vigência',0,'Resolução GECEX (exemplo)',0),
   ('8443.39.10','Ex 002','Modelo de Ex-Tarifário (BIT) — validar vigência',0,'Resolução GECEX (exemplo)',0);
-
+--> statement-breakpoint
 -- ---------- 4) fiscal_benefits — seed nacional + Mercosul/ALADI ----------
 -- A tabela já existe (migração 0014). Seed idempotente por `code`.
 INSERT INTO `fiscal_benefits`

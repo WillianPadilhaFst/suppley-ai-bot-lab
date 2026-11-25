@@ -3,99 +3,40 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "../_core/cookies";
-import { registerUser, loginUser, getUserById, generateResetToken, resetPassword, changePassword, countUsers } from "../services/authService";
+import { registerUser, loginUser, generateResetToken, resetPassword, changePassword } from "../services/authService";
+
+import { createSessionToken, SESSION_COOKIE } from "../security/session";
+import { safeUser } from "../security/policy";
+import { revokeSessions, updateProfile } from "../services/authService";
+const SESSION_EXPIRY = 24 * 60 * 60 * 1000;
+
 import { sendEmail } from "../services/emailService";
 import { logger } from "../_core/logger";
-import { SignJWT, jwtVerify } from "jose";
 
 function escapeHtml(raw: string): string {
-  return raw
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "excambia-calc-secret-key-2024");
-const SESSION_COOKIE = "suppley_session";
-const SESSION_EXPIRY = 30 * 24 * 60 * 60 * 1000; // 30 days
-
-async function createSessionToken(userId: number): Promise<string> {
-  return new SignJWT({ userId })
-    .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime("30d")
-    .setIssuedAt()
-    .sign(JWT_SECRET);
-}
-
-async function verifySessionToken(token: string): Promise<{ userId: number } | null> {
-  try {
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    return { userId: payload.userId as number };
-  } catch {
-    return null;
-  }
+  return raw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 export const authRouter = router({
-me: publicProcedure.query(async ({ ctx }) => {
-  // First check OAuth user
-  if (ctx.user) return ctx.user;
-  
-  // Check Authorization header (localStorage fallback for Safari iOS)
-  const authHeader = ctx.req.headers.authorization;
-  if (authHeader?.startsWith("Bearer ")) {
-    const token = authHeader.slice(7);
-    const session = await verifySessionToken(token);
-    if (session) {
-      const user = await getUserById(session.userId);
-      if (user) return user;
-    }
-  }
-  
-  // Then check email session cookie
-  const sessionCookie = ctx.req.cookies?.[SESSION_COOKIE];
-  if (sessionCookie) {
-    const session = await verifySessionToken(sessionCookie);
-    if (session) {
-      const user = await getUserById(session.userId);
-      return user || null;
-    }
-  }
-  return null;
+me: publicProcedure.query(({ ctx }) => ctx.user ? safeUser(ctx.user) : null),
+updateProfile: protectedProcedure.input(z.object({ name: z.string().trim().min(2).max(200) })).mutation(async ({ctx, input}) => {
+  await updateProfile(ctx.user.id, input.name); return { success: true };
 }),
 
 register: publicProcedure
   .input(z.object({
-    name: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
+    name: z.string().trim().max(200).min(2, "Nome deve ter pelo menos 2 caracteres"),
     email: z.string().email("Email inválido"),
-    password: z.string().min(8, "Senha deve ter pelo menos 8 caracteres"),
+    password: z.string().max(72).min(8, "Senha deve ter pelo menos 8 caracteres"),
   }))
   .mutation(async ({ input, ctx }) => {
-    // Auto-cadastro público desabilitado: novos usuários são criados pelo
-    // administrador em Configurações → Usuários. Exceção: bootstrap do 1º
-    // usuário quando o banco ainda está vazio (vira admin automaticamente).
-    const existingCount = await countUsers();
-    if (existingCount > 0) {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "Cadastro disponível apenas pelo administrador. Solicite acesso ao administrador do sistema.",
-      });
-    }
-
     const result = await registerUser(input);
     if (!result.success || !result.user) {
       throw new TRPCError({ code: "BAD_REQUEST", message: result.error || "Erro ao registrar" });
     }
     
-    // Create session
-    const token = await createSessionToken(result.user.id);
-    const cookieOptions = getSessionCookieOptions(ctx.req);
-    ctx.res.cookie(SESSION_COOKIE, token, { ...cookieOptions, maxAge: SESSION_EXPIRY });
-    
-    // Return token for localStorage fallback (Safari iOS)
-    return { success: true, user: result.user, token };
+    return { success: true, pendingApproval: true };
+
   }),
 
 login: publicProcedure
@@ -110,15 +51,16 @@ login: publicProcedure
     }
     
     // Create session
-    const token = await createSessionToken(result.user.id);
+    const token = await createSessionToken(result.user);
     const cookieOptions = getSessionCookieOptions(ctx.req);
     ctx.res.cookie(SESSION_COOKIE, token, { ...cookieOptions, maxAge: SESSION_EXPIRY });
     
     // Return token for localStorage fallback (Safari iOS)
-    return { success: true, user: result.user, token };
+    return { success: true, user: safeUser(result.user), token };
   }),
 
-logout: publicProcedure.mutation(({ ctx }) => {
+logout: publicProcedure.mutation(async ({ ctx }) => {
+  if (ctx.user) await revokeSessions(ctx.user.id);
   const cookieOptions = getSessionCookieOptions(ctx.req);
   ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
   ctx.res.clearCookie(SESSION_COOKIE, { ...cookieOptions, maxAge: -1 });
@@ -135,7 +77,7 @@ requestPasswordReset: publicProcedure
 resetPassword: publicProcedure
   .input(z.object({
     token: z.string(),
-    password: z.string().min(8),
+    password: z.string().max(72).min(8),
   }))
   .mutation(async ({ input }) => {
     const result = await resetPassword(input.token, input.password);
@@ -148,7 +90,7 @@ resetPassword: publicProcedure
 changePassword: protectedProcedure
   .input(z.object({
     currentPassword: z.string(),
-    newPassword: z.string().min(8),
+    newPassword: z.string().max(72).min(8),
   }))
   .mutation(async ({ input, ctx }) => {
     const result = await changePassword(ctx.user.id, input.currentPassword, input.newPassword);

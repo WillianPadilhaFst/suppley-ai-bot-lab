@@ -17,66 +17,108 @@ SET @col_exists := (
   SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'operacoes' AND COLUMN_NAME = 'modo'
 );
+--> statement-breakpoint
 SET @ddl := IF(@col_exists = 0,
   'ALTER TABLE operacoes ADD COLUMN modo ENUM(''cotacao'',''desenvolvimento'') NULL AFTER status',
   'SELECT 1 /* operacoes.modo já existe */');
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
+--> statement-breakpoint
+PREPARE stmt FROM @ddl;
+--> statement-breakpoint
+EXECUTE stmt;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt;
+--> statement-breakpoint
 -- ---------- 2) operacoes.tracking* ----------
 SET @col_exists := (
   SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'operacoes' AND COLUMN_NAME = 'trackingContainer'
 );
+--> statement-breakpoint
 SET @ddl := IF(@col_exists = 0,
   'ALTER TABLE operacoes ADD COLUMN trackingContainer VARCHAR(60) NULL',
   'SELECT 1 /* operacoes.trackingContainer já existe */');
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
+--> statement-breakpoint
+PREPARE stmt FROM @ddl;
+--> statement-breakpoint
+EXECUTE stmt;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt;
+--> statement-breakpoint
 SET @col_exists := (
   SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'operacoes' AND COLUMN_NAME = 'trackingBl'
 );
+--> statement-breakpoint
 SET @ddl := IF(@col_exists = 0,
   'ALTER TABLE operacoes ADD COLUMN trackingBl VARCHAR(60) NULL',
   'SELECT 1 /* operacoes.trackingBl já existe */');
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
+--> statement-breakpoint
+PREPARE stmt FROM @ddl;
+--> statement-breakpoint
+EXECUTE stmt;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt;
+--> statement-breakpoint
 SET @col_exists := (
   SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'operacoes' AND COLUMN_NAME = 'trackingArmador'
 );
+--> statement-breakpoint
 SET @ddl := IF(@col_exists = 0,
   'ALTER TABLE operacoes ADD COLUMN trackingArmador VARCHAR(120) NULL',
   'SELECT 1 /* operacoes.trackingArmador já existe */');
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
+--> statement-breakpoint
+PREPARE stmt FROM @ddl;
+--> statement-breakpoint
+EXECUTE stmt;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt;
+--> statement-breakpoint
 SET @col_exists := (
   SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'operacoes' AND COLUMN_NAME = 'trackingNavio'
 );
+--> statement-breakpoint
 SET @ddl := IF(@col_exists = 0,
   'ALTER TABLE operacoes ADD COLUMN trackingNavio VARCHAR(120) NULL',
   'SELECT 1 /* operacoes.trackingNavio já existe */');
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
+--> statement-breakpoint
+PREPARE stmt FROM @ddl;
+--> statement-breakpoint
+EXECUTE stmt;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt;
+--> statement-breakpoint
 SET @col_exists := (
   SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'operacoes' AND COLUMN_NAME = 'trackingEta'
 );
+--> statement-breakpoint
 SET @ddl := IF(@col_exists = 0,
   'ALTER TABLE operacoes ADD COLUMN trackingEta TIMESTAMP NULL',
   'SELECT 1 /* operacoes.trackingEta já existe */');
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
+--> statement-breakpoint
+PREPARE stmt FROM @ddl;
+--> statement-breakpoint
+EXECUTE stmt;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt;
+--> statement-breakpoint
 SET @col_exists := (
   SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'operacoes' AND COLUMN_NAME = 'trackingStatus'
 );
+--> statement-breakpoint
 SET @ddl := IF(@col_exists = 0,
   'ALTER TABLE operacoes ADD COLUMN trackingStatus VARCHAR(120) NULL',
   'SELECT 1 /* operacoes.trackingStatus já existe */');
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
+--> statement-breakpoint
+PREPARE stmt FROM @ddl;
+--> statement-breakpoint
+EXECUTE stmt;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt;
+--> statement-breakpoint
 -- ---------- 3) operacao_marcos.tipo (expansão do enum) ----------
 -- Idempotente por natureza: MODIFY reescreve o enum com o conjunto completo.
 ALTER TABLE `operacao_marcos` MODIFY COLUMN `tipo` ENUM(
@@ -86,7 +128,7 @@ ALTER TABLE `operacao_marcos` MODIFY COLUMN `tipo` ENUM(
   'pedido_confirmado','producao_iniciada','produto_embarcado',
   'di_registrada','nacionalizado','entregue'
 ) NOT NULL;
-
+--> statement-breakpoint
 -- ---------- 4) operacao_eventos.tipo (novos eventos de marco) ----------
 -- Acrescenta os 3 marcos da jornada (estudo/sourcing) que não tinham evento.
 ALTER TABLE `operacao_eventos` MODIFY COLUMN `tipo` ENUM(

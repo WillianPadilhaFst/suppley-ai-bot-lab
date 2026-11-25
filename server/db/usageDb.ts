@@ -8,7 +8,7 @@ import { getDb } from "./connection";
 
 export async function recordLlmUsage(data: InsertLlmUsage): Promise<void> {
   const db = await getDb();
-  if (!db) return;
+  if (!db) throw new Error("Usage database unavailable");
   await db.insert(llmUsage).values(data);
 }
 
@@ -21,7 +21,7 @@ const PRICE: Record<string, { in: number; out: number }> = {
 };
 function priceFor(model: string) {
   const key = Object.keys(PRICE).find((k) => model.startsWith(k));
-  return key ? PRICE[key] : { in: 5, out: 25 }; // fallback Opus-tier
+  return key ? { ...PRICE[key], known: true } : { in: 5, out: 25, known: false };
 }
 
 export interface UsageSummaryRow {
@@ -32,6 +32,7 @@ export interface UsageSummaryRow {
   cacheCreationTokens: number;
   cacheReadTokens: number;
   estCostUsd: number;
+  pricingKnown: boolean;
 }
 export interface UsageSummary {
   periodDays: number;
@@ -74,6 +75,7 @@ export async function getLlmUsageSummary(days = 30): Promise<UsageSummary> {
       cacheCreationTokens: Number(r.cacheCreationTokens),
       cacheReadTokens: Number(r.cacheReadTokens),
       estCostUsd,
+      pricingKnown: p.known,
     };
   });
 

@@ -17,9 +17,13 @@ SET @col_exists := (
     AND TABLE_NAME = 'proforma_items'
     AND COLUMN_NAME = 'description'
 );
+--> statement-breakpoint
 SET @ddl := IF(@col_exists = 0,
   'ALTER TABLE proforma_items ADD COLUMN description TEXT NULL AFTER productName',
   'SELECT 1 /* proforma_items.description já existe */');
+--> statement-breakpoint
 PREPARE stmt FROM @ddl;
+--> statement-breakpoint
 EXECUTE stmt;
+--> statement-breakpoint
 DEALLOCATE PREPARE stmt;

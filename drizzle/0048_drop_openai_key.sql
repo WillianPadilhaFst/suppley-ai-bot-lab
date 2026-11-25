@@ -15,7 +15,13 @@ SET @col_exists := (
   SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'company_settings' AND COLUMN_NAME = 'openaiApiKey'
 );
+--> statement-breakpoint
 SET @ddl := IF(@col_exists = 1,
   'ALTER TABLE company_settings DROP COLUMN openaiApiKey',
   'SELECT 1 /* company_settings.openaiApiKey já removida */');
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+--> statement-breakpoint
+PREPARE stmt FROM @ddl;
+--> statement-breakpoint
+EXECUTE stmt;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt;

@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { appRouter } from "./routers";
+import { describe, expect, it, vi } from "vitest";
+import { router } from "./_core/trpc";
+import { authRouter } from "./routers/authRouter";
+import { sendEmail } from "./services/emailService";
+import { consumeLimit } from "./security/abuse";
+vi.mock("./services/emailService", () => ({ sendEmail: vi.fn(async () => ({ success: true })) }));
+vi.mock("./security/abuse", () => ({ audit: vi.fn(), consumeLimit: vi.fn() }));
+const appRouter = router({ auth: authRouter });
 import type { TrpcContext } from "./_core/context";
 
 function createPublicContext(): TrpcContext {
@@ -26,6 +32,8 @@ describe("auth.requestAccess", () => {
     });
 
     expect(result.success).toBe(true);
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ replyTo: "compras@empresa.com.br" }));
+    expect(consumeLimit).toHaveBeenCalledWith("auth:unknown", 20, 60000);
     expect(typeof result.emailSent).toBe("boolean");
   });
 

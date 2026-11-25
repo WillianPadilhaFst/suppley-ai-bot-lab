@@ -1,169 +1,136 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import * as db from "./db";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { and, eq } from "drizzle-orm";
+import { quotations, importCalculations } from "../drizzle/schema";
+import { getDb } from "./db/connection";
+import * as db from "./db/quotationsDb";
 
+vi.mock("./db/connection", () => ({ getDb: vi.fn() }));
+
+// Exercise the real helpers without requiring credentials or writing to a live database.
 describe("Quotations Database Functions", () => {
-  let testQuotationId: number | null = null;
-  const testUserId = 999999; // Use a high ID to avoid conflicts
+  const userId = 42;
+  const quotation = { id: 7, userId, supplierName: "Test Supplier", currency: "USD", status: "draft" };
+  const input = { userId, supplierName: "Test Supplier", currency: "USD" as const };
+  const rows = vi.fn();
+  const values = vi.fn();
+  const writeWhere = vi.fn();
+  const set = vi.fn(() => ({ where: writeWhere }));
+  const query = {
+    where: vi.fn(),
+    orderBy: vi.fn(),
+    limit: rows,
+  };
+  const from = vi.fn(() => query);
+  const connection = {
+    insert: vi.fn(() => ({ values })),
+    select: vi.fn(() => ({ from })),
+    update: vi.fn(() => ({ set })),
+    delete: vi.fn(() => ({ where: writeWhere })),
+  };
 
-  afterAll(async () => {
-    // Clean up test data
-    if (testQuotationId) {
-      await db.deleteQuotation(testQuotationId, testUserId);
-    }
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getDb).mockReturnValue(connection as unknown as NonNullable<ReturnType<typeof getDb>>);
+    values.mockResolvedValue([{ insertId: quotation.id }]);
+    rows.mockResolvedValue([quotation]);
+    query.where.mockReturnValue(query);
+    query.orderBy.mockReturnValue(query);
+    writeWhere.mockResolvedValue(undefined);
   });
 
-  describe("createQuotation", () => {
-    it("should create a quotation with required fields", async () => {
-      const result = await db.createQuotation({
-        userId: testUserId,
-        supplierName: "Test Supplier",
-        supplierCountry: "Paraguai",
-        currency: "USD",
-      });
-      
-      expect(result).not.toBeNull();
-      if (result) {
-        testQuotationId = result.id;
-        expect(result.userId).toBe(testUserId);
-        expect(result.supplierName).toBe("Test Supplier");
-        expect(result.supplierCountry).toBe("Paraguai");
-        expect(result.currency).toBe("USD");
-        expect(result.status).toBe("draft");
-      }
-    });
+  it("creates a quotation and reads back the generated ID", async () => {
+    expect(await db.createQuotation(input)).toEqual(quotation);
+    expect(connection.insert).toHaveBeenCalledWith(quotations);
+    expect(values).toHaveBeenCalledWith(input);
+    expect(query.where).toHaveBeenCalledWith(eq(quotations.id, quotation.id));
+    expect(rows).toHaveBeenCalledWith(1);
   });
 
-  describe("getQuotationsByUser", () => {
-    it("should return quotations for the user", async () => {
-      const result = await db.getQuotationsByUser(testUserId);
-      
-      expect(Array.isArray(result)).toBe(true);
-      if (testQuotationId) {
-        expect(result.length).toBeGreaterThan(0);
-        expect(result.some(q => q.id === testQuotationId)).toBe(true);
-      }
-    });
-
-    it("should return empty array for non-existent user", async () => {
-      const result = await db.getQuotationsByUser(-1);
-      
-      expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBe(0);
-    });
+  it("returns null when the inserted quotation cannot be read back", async () => {
+    rows.mockResolvedValue([]);
+    expect(await db.createQuotation(input)).toBeNull();
   });
 
-  describe("getQuotationById", () => {
-    it("should return quotation by ID for correct user", async () => {
-      if (!testQuotationId) return;
-      
-      const result = await db.getQuotationById(testQuotationId, testUserId);
-      
-      expect(result).not.toBeNull();
-      expect(result?.id).toBe(testQuotationId);
-    });
-
-    it("should return null for wrong user", async () => {
-      if (!testQuotationId) return;
-      
-      const result = await db.getQuotationById(testQuotationId, -1);
-      
-      expect(result).toBeNull();
-    });
+  it("lists quotations for the requested user with the requested limit", async () => {
+    expect(await db.getQuotationsByUser(userId, 10)).toEqual([quotation]);
+    expect(from).toHaveBeenCalledWith(quotations);
+    expect(query.where).toHaveBeenCalledWith(eq(quotations.userId, userId));
+    expect(rows).toHaveBeenCalledWith(10);
   });
 
-  describe("updateQuotation", () => {
-    it("should update quotation status", async () => {
-      if (!testQuotationId) return;
-      
-      const result = await db.updateQuotation(testQuotationId, testUserId, { 
-        status: "analyzing" 
-      });
-      
-      expect(result).toBe(true);
-      
-      // Verify the update
-      const updated = await db.getQuotationById(testQuotationId, testUserId);
-      expect(updated?.status).toBe("analyzing");
-    });
-
-    it("should update quotation notes", async () => {
-      if (!testQuotationId) return;
-      
-      const result = await db.updateQuotation(testQuotationId, testUserId, { 
-        notes: "Test notes for quotation" 
-      });
-      
-      expect(result).toBe(true);
-      
-      // Verify the update
-      const updated = await db.getQuotationById(testQuotationId, testUserId);
-      expect(updated?.notes).toBe("Test notes for quotation");
-    });
+  it("returns an empty list when the user has no quotations", async () => {
+    rows.mockResolvedValue([]);
+    expect(await db.getQuotationsByUser(-1)).toEqual([]);
+    expect(query.where).toHaveBeenCalledWith(eq(quotations.userId, -1));
+    expect(rows).toHaveBeenCalledWith(50);
   });
 
-  describe("getQuotationStats", () => {
-    it("should return stats object with correct structure", async () => {
-      const result = await db.getQuotationStats(testUserId);
-      
-      expect(result).toHaveProperty("totalQuotations");
-      expect(result).toHaveProperty("viableCount");
-      expect(result).toHaveProperty("inProgressCount");
-      expect(result).toHaveProperty("completedCount");
-      expect(result).toHaveProperty("totalValueBrl");
-    });
-
-    it("should count quotations correctly", async () => {
-      const result = await db.getQuotationStats(testUserId);
-      
-      expect(typeof result.totalQuotations).toBe("number");
-      expect(result.totalQuotations).toBeGreaterThanOrEqual(0);
-    });
+  it("looks up a quotation by both ID and owner", async () => {
+    expect(await db.getQuotationById(quotation.id, userId)).toEqual(quotation);
+    expect(query.where).toHaveBeenCalledWith(and(eq(quotations.id, quotation.id), eq(quotations.userId, userId)));
+    expect(rows).toHaveBeenCalledWith(1);
   });
 
-  describe("getQuotationsByStatus", () => {
-    it("should filter quotations by status", async () => {
-      // First update our test quotation to a specific status
-      if (testQuotationId) {
-        await db.updateQuotation(testQuotationId, testUserId, { status: "viable" });
-      }
-      
-      const result = await db.getQuotationsByStatus(testUserId, "viable");
-      
-      expect(Array.isArray(result)).toBe(true);
-      if (testQuotationId) {
-        expect(result.some(q => q.id === testQuotationId)).toBe(true);
-      }
-    });
+  it("returns null when the quotation does not belong to the requested user", async () => {
+    rows.mockResolvedValue([]);
+    expect(await db.getQuotationById(quotation.id, -1)).toBeNull();
+    expect(query.where).toHaveBeenCalledWith(and(eq(quotations.id, quotation.id), eq(quotations.userId, -1)));
   });
 
-  describe("getCalculationsByQuotation", () => {
-    it("should return empty array when no calculations linked", async () => {
-      if (!testQuotationId) return;
-      
-      const result = await db.getCalculationsByQuotation(testQuotationId, testUserId);
-      
-      expect(Array.isArray(result)).toBe(true);
-    });
+  it.each([{ status: "analyzing" as const }, { notes: "Updated notes" }])("updates quotation fields: %o", async (patch) => {
+    expect(await db.updateQuotation(quotation.id, userId, patch)).toBe(true);
+    expect(connection.update).toHaveBeenCalledWith(quotations);
+    expect(set).toHaveBeenCalledWith(patch);
+    expect(writeWhere).toHaveBeenCalledWith(and(eq(quotations.id, quotation.id), eq(quotations.userId, userId)));
   });
 
-  describe("deleteQuotation", () => {
-    it("should delete quotation successfully", async () => {
-      // Create a new quotation to delete
-      const newQuotation = await db.createQuotation({
-        userId: testUserId,
-        supplierName: "Delete Test",
-        currency: "USD",
-      });
-      
-      if (newQuotation) {
-        const result = await db.deleteQuotation(newQuotation.id, testUserId);
-        expect(result).toBe(true);
-        
-        // Verify deletion
-        const deleted = await db.getQuotationById(newQuotation.id, testUserId);
-        expect(deleted).toBeNull();
-      }
-    });
+  it("returns aggregated statistics for the requested user", async () => {
+    const stats = { totalQuotations: 3, viableCount: 2, inProgressCount: 1, completedCount: 1, totalValueBrl: 500 };
+    query.where.mockResolvedValue([stats]);
+    expect(await db.getQuotationStats(userId)).toEqual(stats);
+    expect(query.where).toHaveBeenCalledWith(eq(quotations.userId, userId));
+  });
+
+  it("returns zero statistics when the query returns no rows", async () => {
+    query.where.mockResolvedValue([]);
+    expect(await db.getQuotationStats(userId)).toEqual({ totalQuotations: 0, viableCount: 0, inProgressCount: 0, completedCount: 0, totalValueBrl: 0 });
+  });
+
+  it("filters quotations by both user and status", async () => {
+    query.orderBy.mockResolvedValue([quotation]);
+    expect(await db.getQuotationsByStatus(userId, "draft")).toEqual([quotation]);
+    expect(query.where).toHaveBeenCalledWith(and(eq(quotations.userId, userId), eq(quotations.status, "draft")));
+  });
+
+  it("finds calculations using both quotation ID and owner", async () => {
+    query.orderBy.mockResolvedValue([]);
+    expect(await db.getCalculationsByQuotation(quotation.id, userId)).toEqual([]);
+    expect(from).toHaveBeenCalledWith(importCalculations);
+    expect(query.where).toHaveBeenCalledWith(and(eq(importCalculations.quotationId, quotation.id), eq(importCalculations.userId, userId)));
+  });
+
+  it("deletes associated calculations before deleting the quotation, scoped to the owner", async () => {
+    expect(await db.deleteQuotation(quotation.id, userId)).toBe(true);
+    expect(connection.delete).toHaveBeenNthCalledWith(1, importCalculations);
+    expect(connection.delete).toHaveBeenNthCalledWith(2, quotations);
+    expect(writeWhere).toHaveBeenNthCalledWith(1, and(eq(importCalculations.quotationId, quotation.id), eq(importCalculations.userId, userId)));
+    expect(writeWhere).toHaveBeenNthCalledWith(2, and(eq(quotations.id, quotation.id), eq(quotations.userId, userId)));
+  });
+
+  it("preserves the documented fallbacks when no database is configured", async () => {
+    vi.mocked(getDb).mockReturnValue(null);
+    expect(await db.createQuotation(input)).toBeNull();
+    expect(await db.getQuotationsByUser(userId)).toEqual([]);
+    expect(await db.getQuotationById(quotation.id, userId)).toBeNull();
+    expect(await db.updateQuotation(quotation.id, userId, { notes: "test" })).toBe(false);
+    expect(await db.deleteQuotation(quotation.id, userId)).toBe(false);
+    expect(await db.getCalculationsByQuotation(quotation.id, userId)).toEqual([]);
+    expect(await db.getQuotationsByStatus(userId, "draft")).toEqual([]);
+    expect(await db.getQuotationStats(userId)).toEqual({ totalQuotations: 0, viableCount: 0, inProgressCount: 0, completedCount: 0, totalValueBrl: 0 });
+    expect(connection.insert).not.toHaveBeenCalled();
+    expect(connection.select).not.toHaveBeenCalled();
+    expect(connection.update).not.toHaveBeenCalled();
+    expect(connection.delete).not.toHaveBeenCalled();
   });
 });
 

@@ -10,11 +10,17 @@ SET @col_exists := (
   SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'port_costs' AND COLUMN_NAME = 'storageMinCents'
 );
+--> statement-breakpoint
 SET @ddl := IF(@col_exists = 0,
   'ALTER TABLE port_costs ADD COLUMN storageMinCents BIGINT NOT NULL DEFAULT 0 AFTER storageBp',
   'SELECT 1 /* port_costs.storageMinCents já existe */');
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
+--> statement-breakpoint
+PREPARE stmt FROM @ddl;
+--> statement-breakpoint
+EXECUTE stmt;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt;
+--> statement-breakpoint
 -- 2) Portonave / Navegantes (SC) — Tabela de Preços v02/2026
 --    Armazenagem importação (1º período): 0,68% do CIF, mínimo R$ 1.523,00 por contêiner.
 UPDATE `port_costs`

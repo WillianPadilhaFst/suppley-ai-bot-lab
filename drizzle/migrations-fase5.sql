@@ -19,7 +19,7 @@ ALTER TABLE `products`
   ADD COLUMN `leadTimeMedioDias` INT NULL,
   ADD COLUMN `custoNacionalRefCents` BIGINT NULL,
   ADD COLUMN `custoImportadoRefCents` BIGINT NULL;
-
+--> statement-breakpoint
 -- ---------- 2.2 Fornecedores / Fabricantes (amplia suppliers) ----------
 ALTER TABLE `suppliers`
   ADD COLUMN `tipo` ENUM('fabrica','trading','distribuidor','exportador','representante','fornecedor_nacional','fabricante_nacional','importador_local','distribuidor_brasileiro') NULL DEFAULT 'fabrica',
@@ -30,7 +30,7 @@ ALTER TABLE `suppliers`
   ADD COLUMN `leadTimeMedioDias` INT NULL,
   ADD COLUMN `ratingScore` INT NULL,
   ADD COLUMN `ratingClasse` ENUM('A','B','C','D') NULL;
-
+--> statement-breakpoint
 -- ---------- 2.3 Compradores nacionais / Setores (amplia industries) ----------
 ALTER TABLE `industries`
   ADD COLUMN `segmento` VARCHAR(120) NULL,
@@ -39,7 +39,7 @@ ALTER TABLE `industries`
   ADD COLUMN `sensibilidadePreco` ENUM('alta','media','baixa') NULL,
   ADD COLUMN `volumeEstimadoMensal` INT NULL,
   ADD COLUMN `potencialComercial` ENUM('alto','medio','baixo') NULL;
-
+--> statement-breakpoint
 -- ---------- 2.4 Tabelas novas ----------
 CREATE TABLE IF NOT EXISTS `ativo_precos` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS `ativo_precos` (
   `registradoEm` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_ativo_precos_ativo` (`ativoId`)
 );
-
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS `ativo_fornecedor` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `ativoId` INT NOT NULL,
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS `ativo_fornecedor` (
   INDEX `idx_ativo_fornecedor_ativo` (`ativoId`),
   INDEX `idx_ativo_fornecedor_forn` (`fornecedorId`)
 );
-
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS `fornecedor_ocorrencias` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `fornecedorId` INT NOT NULL,
@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS `fornecedor_ocorrencias` (
   `criadoEm` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_forn_ocorr_forn` (`fornecedorId`)
 );
-
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS `fase5_documentos` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `userId` INT NOT NULL,

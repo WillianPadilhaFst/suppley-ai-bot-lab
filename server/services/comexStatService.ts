@@ -49,6 +49,12 @@ export interface ComexResumo {
   topOrigens: ComexOrigem[];
   /** false quando a fonte não retornou nada (NCM sem fluxo ou API fora). */
   disponivel: boolean;
+  /**
+   * Preenchido quando NÃO FOI POSSÍVEL CONSULTAR (limite de taxa, rede, erro
+   * HTTP). Ausente com `disponivel: false` significa que a fonte respondeu e
+   * não há fluxo — são coisas opostas e o agente precisa distingui-las.
+   */
+  erro?: string;
 }
 
 /** Linha bruta da API (campos tolerantes a variações de nome). */
@@ -58,6 +64,7 @@ export interface ComexRow {
   pais?: string;
   metricFOB?: string | number;
   metricKG?: string | number;
+  metricFreight?: string | number;
   [k: string]: unknown;
 }
 
@@ -143,10 +150,58 @@ export function agregarComex(
 }
 
 /** Teto de espera por chamada: o chat não pode ficar pendurado numa fonte lenta. */
-const TIMEOUT_MS = 20_000;
+const TIMEOUT_MS = 12_000;
 
-const RETRIES_429 = 3;
+/**
+ * Uma retentativa só, com espera curta. Antes eram 3 com recuo 2+4+8 s, e o
+ * leque de formatos multiplicava isso: uma pergunta de dimensionamento podia
+ * levar MINUTOS sob estrangulamento — e terminar em "não há dados". Num chat,
+ * falhar rápido e dizer a verdade vale mais que insistir.
+ */
+const RETRIES_429 = 1;
+const ESPERA_MAX_429_MS = 3_000;
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Falha de CONSULTA (não de dado): limite de taxa, rede, HTTP de erro. Quem
+ * recebe isto não pode concluir "não há importação" — só "não consegui ver".
+ */
+export class ComexIndisponivelError extends Error {
+  constructor(public readonly motivo: "limite_taxa" | "http" | "rede", detalhe: string) {
+    super(detalhe);
+    this.name = "ComexIndisponivelError";
+  }
+}
+
+/** Mensagem pronta para o agente — nunca confundir com ausência de fluxo. */
+export const MSG_COMEX_INDISPONIVEL =
+  "a base oficial do Comex Stat está temporariamente indisponível (limite de requisições) — " +
+  "isso NÃO significa ausência de importação";
+
+/**
+ * DISJUNTOR. Depois de um 429 que esgotou a retentativa, a fonte fica marcada
+ * como estrangulada por alguns minutos e as chamadas seguintes falham NA HORA,
+ * sem rede. Insistir só prolonga o estrangulamento — foi o que manteve o IP
+ * do servidor em 429 de forma persistente.
+ */
+const PAUSA_DISJUNTOR_MS = 5 * 60 * 1000;
+let estranguladoAte = 0;
+
+/**
+ * CACHE das respostas bem-sucedidas, pela consulta exata. O dado é mensal e
+ * consolidado com defasagem — a mesma pergunta repetida no mesmo dia não
+ * precisa ir à rede. Resposta vazia com HTTP 200 também é cacheada: é um
+ * fato ("não há fluxo"), não uma falha.
+ */
+const CACHE_TTL_MS = 6 * 3600 * 1000;
+const CACHE_MAX = 500;
+const cacheComex = new Map<string, { at: number; rows: ComexRow[] }>();
+
+/** Só para teste. */
+export function resetComexEstado(): void {
+  estranguladoAte = 0;
+  cacheComex.clear();
+}
 
 /**
  * POST no Comex Stat com tratamento de LIMITE DE TAXA.
@@ -157,31 +212,65 @@ const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * silenciosamente. Por isso o 429 é tratado com espera e nova tentativa, em vez
  * de virar lista vazia.
  */
-async function postComex(body: unknown): Promise<ComexRow[]> {
-  for (let tentativa = 0; tentativa <= RETRIES_429; tentativa++) {
-    const resp = await fetch(COMEXSTAT_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
+async function postComex(
+  body: unknown,
+  {
+    timeoutMs = TIMEOUT_MS,
+    retries = RETRIES_429,
+    language,
+  }: { timeoutMs?: number; retries?: number; language?: "pt" } = {},
+): Promise<ComexRow[]> {
+  const url = language ? `${COMEXSTAT_URL}?language=${language}` : COMEXSTAT_URL;
+  const corpo = JSON.stringify(body);
+  const chave = `${url} ${corpo}`;
+  const hit = cacheComex.get(chave);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.rows;
 
-    if (resp.status === 429 && tentativa < RETRIES_429) {
-      // Respeita o Retry-After quando vier; senão, recuo exponencial.
-      const retryAfter = Number(resp.headers.get("retry-after"));
-      const espera_ms = Number.isFinite(retryAfter) && retryAfter > 0
-        ? retryAfter * 1000
-        : 2000 * Math.pow(2, tentativa);
-      await espera(Math.min(espera_ms, 15_000));
-      continue;
+  if (Date.now() < estranguladoAte) {
+    throw new ComexIndisponivelError("limite_taxa", "disjuntor aberto após 429 recente");
+  }
+
+  for (let tentativa = 0; tentativa <= retries; tentativa++) {
+    let resp: Response;
+    try {
+      resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: corpo,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (e: any) {
+      throw new ComexIndisponivelError("rede", String(e?.message ?? e));
     }
 
-    if (!resp.ok) return [];
+    if (resp.status === 429) {
+      if (tentativa < retries) {
+        const retryAfter = Number(resp.headers.get("retry-after"));
+        const espera_ms = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1500;
+        await espera(Math.min(espera_ms, ESPERA_MAX_429_MS));
+        continue;
+      }
+      estranguladoAte = Date.now() + PAUSA_DISJUNTOR_MS;
+      console.warn("[comexStat] 429 persistente — disjuntor aberto por 5 min");
+      throw new ComexIndisponivelError("limite_taxa", "HTTP 429");
+    }
+
+    if (!resp.ok) {
+      console.warn(`[comexStat] HTTP ${resp.status}`);
+      throw new ComexIndisponivelError("http", `HTTP ${resp.status}`);
+    }
+
     const json: any = await resp.json();
     const list = json?.data?.list ?? json?.list ?? json?.data ?? [];
-    return Array.isArray(list) ? (list as ComexRow[]) : [];
+    const rows = Array.isArray(list) ? (list as ComexRow[]) : [];
+    if (cacheComex.size >= CACHE_MAX) {
+      const primeira = cacheComex.keys().next().value;
+      if (primeira !== undefined) cacheComex.delete(primeira);
+    }
+    cacheComex.set(chave, { at: Date.now(), rows });
+    return rows;
   }
-  return [];
+  throw new ComexIndisponivelError("limite_taxa", "HTTP 429");
 }
 
 /**
@@ -212,13 +301,12 @@ function bodiesComex(fluxo: Fluxo, ncm8: string, from: string, to: string, comPa
 
 /** Consulta o Comex Stat tentando os formatos conhecidos; falha graciosa. */
 async function queryComex(fluxo: Fluxo, ncm8: string, from: string, to: string, comPais: boolean): Promise<ComexRow[]> {
+  // Os formatos alternativos existem para quando a API muda de SCHEMA — e
+  // isso se manifesta como resposta vazia, não como erro. Falha de consulta
+  // (429, rede) sobe na hora: tentar outro formato só gasta mais quota.
   for (const body of bodiesComex(fluxo, ncm8, from, to, comPais)) {
-    try {
-      const rows = await postComex(body);
-      if (rows.length) return rows;
-    } catch {
-      /* tenta o próximo formato */
-    }
+    const rows = await postComex(body);
+    if (rows.length) return rows;
   }
   return [];
 }
@@ -322,12 +410,91 @@ export async function consultarComexPorNcm(input: { ncm: string; fluxo?: Fluxo }
   const toAnterior = ymMinus(now, DEFASAGEM_MESES + JANELA_MESES);
   const fromAnterior = ymMinus(now, DEFASAGEM_MESES + 2 * JANELA_MESES - 1);
 
-  const [recente, anterior] = await Promise.all([
-    queryComex(fluxo, ncm8, fromRecente, toRecente, true),
-    queryComex(fluxo, ncm8, fromAnterior, toAnterior, false),
-  ]);
+  try {
+    // Serializado: em paralelo, os dois disparos competem pela mesma quota.
+    const recente = await queryComex(fluxo, ncm8, fromRecente, toRecente, true);
+    const anterior = await queryComex(fluxo, ncm8, fromAnterior, toAnterior, false);
+    return agregarComex(ncm8, fluxo, recente, anterior);
+  } catch (e) {
+    if (e instanceof ComexIndisponivelError) {
+      return { ...agregarComex(ncm8, fluxo, [], []), erro: MSG_COMEX_INDISPONIVEL };
+    }
+    throw e;
+  }
+}
 
-  return agregarComex(ncm8, fluxo, recente, anterior);
+const VIAS_FRETE = {
+  maritimo: { codigo: 1, nome: "maritima" },
+  aereo: { codigo: 4, nome: "aerea" },
+  ferroviario: { codigo: 6, nome: "ferroviaria" },
+  rodoviario: { codigo: 7, nome: "rodoviaria" },
+} as const;
+
+function normalizarDetalheComex(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+/** Média histórica ponderada pelo peso líquido declarado, para um NCM, origem e modal. */
+export async function consultarFreteHistoricoComex(input: {
+  ncm: string;
+  paisOrigem: string;
+  modal: keyof typeof VIAS_FRETE;
+}) {
+  const origem = normalizarDetalheComex(input.paisOrigem);
+  if (!/^\d{8}$/.test(input.ncm) || !origem) return null;
+
+  const via = VIAS_FRETE[input.modal];
+  const agora = new Date();
+  const de = ymMinus(agora, DEFASAGEM_MESES + 5);
+  const ate = ymMinus(agora, DEFASAGEM_MESES);
+  let rows: ComexRow[];
+  try {
+    rows = await postComex(
+      {
+        flow: "import",
+        monthDetail: true,
+        period: { from: de, to: ate },
+        filters: [
+          { filter: "ncm", values: [Number(input.ncm)] },
+          { filter: "via", values: [via.codigo] },
+        ],
+        details: ["country", "via"],
+        metrics: ["metricKG", "metricFreight"],
+      },
+      { retries: 0, timeoutMs: 8_000, language: "pt" },
+    );
+  } catch {
+    return null;
+  }
+
+  const meses = new Set<string>();
+  let freteUsd = 0;
+  let pesoLiquidoKg = 0;
+  for (const row of rows) {
+    const mes = ymDe(row);
+    const viaDetalhada = normalizarDetalheComex(row.via ?? row.noVia);
+    const peso = Number(row.metricKG);
+    const frete = Number(row.metricFreight);
+    if (
+      !mes || mes < de || mes > ate ||
+      normalizarDetalheComex(paisDe(row)) !== origem ||
+      (viaDetalhada !== via.nome && Number(viaDetalhada) !== via.codigo) ||
+      !Number.isFinite(peso) || peso <= 0 ||
+      !Number.isFinite(frete) || frete <= 0
+    ) continue;
+
+    meses.add(mes);
+    freteUsd += frete;
+    pesoLiquidoKg += peso;
+  }
+  const usdPorKg = freteUsd / pesoLiquidoKg;
+  if (meses.size < 2 || !Number.isFinite(usdPorKg) || usdPorKg <= 0) return null;
+
+  return { usdPorKg, periodo: { de, ate }, mesesComDados: meses.size };
 }
 
 // ---------------------------------------------------------------------------
@@ -618,22 +785,15 @@ async function queryMercado(
   to: string,
   detalhe: DetalheMercado,
 ): Promise<ComexRow[]> {
+  // Falha de consulta (ComexIndisponivelError) NÃO é capturada aqui: sobe
+  // na hora. Antes, o `catch {}` engolia o 429 e passava para o próximo
+  // formato — até 6 requisições por consulta, todas estranguladas, terminando
+  // em `[]`, que o agente lia como "não há importação deste produto".
   for (const body of bodiesMercado(fluxo, ncms, from, to, detalhe)) {
-    for (let tentativa = 0; tentativa < 2; tentativa++) {
-      try {
-        const rows = await postComex(body);
-        if (temDetalhe(rows, detalhe)) return rows;
-        // Veio agregado: quase sempre throttling. Respira e tenta de novo o
-        // MESMO formato antes de concluir que este schema não serve.
-        if (rows.length && tentativa === 0) {
-          await espera(3000);
-          continue;
-        }
-      } catch {
-        /* cai para o próximo formato */
-      }
-      break;
-    }
+    const rows = await postComex(body);
+    if (temDetalhe(rows, detalhe)) return rows;
+    // Resposta agregada sem o detalhe pedido: schema não aplicou o filtro
+    // (ou estrangulamento silencioso). Tenta o próximo formato.
   }
   return [];
 }
@@ -723,10 +883,18 @@ export async function dimensionarMercadoComex(input: {
     rowsPais: ComexRow[];
     rowsUf: ComexRow[];
   }> = [];
-  for (const { ano, janela } of janelas) {
-    const rowsPais = await queryMercado(fluxo, ncms, janela.from, janela.to, "pais");
-    const rowsUf = await queryMercado(fluxo, ncms, janela.from, janela.to, "uf");
-    resultados.push({ ano, janela, rowsPais, rowsUf });
+  try {
+    for (const { ano, janela } of janelas) {
+      const rowsPais = await queryMercado(fluxo, ncms, janela.from, janela.to, "pais");
+      const rowsUf = await queryMercado(fluxo, ncms, janela.from, janela.to, "uf");
+      resultados.push({ ano, janela, rowsPais, rowsUf });
+    }
+  } catch (e) {
+    // A ferramenta já trata `disponivel: false` dizendo que a fonte não
+    // respondeu e proibindo estimar. Aqui só garantimos que isso chegue
+    // RÁPIDO e com o motivo certo.
+    if (e instanceof ComexIndisponivelError) return { ...vazio, erro: MSG_COMEX_INDISPONIVEL };
+    throw e;
   }
 
   // Um ano sem NENHUM dado é registrado, não descartado em silêncio: sumir da

@@ -16,6 +16,8 @@ import { invokeLLM, MODELS, type Message } from "../_core/llm";
 import { getToolSchemas, runTool } from "./tools";
 import type { AnexoTurno, ToolContext } from "./tools/types";
 import { checkBudget } from "./guardrails";
+import { modelForTurn } from "./modelRouting";
+import { lightTurnText, runLightTurn } from "./lightTurn";
 import { getLearningContext } from "../db";
 import * as operacaoService from "../services/operacaoService";
 
@@ -92,6 +94,9 @@ ARQUIVO DE COTAÇÃO/PROFORMA/CATÁLOGO NO CHAT (catalogação + validade tempor
    • Cotação ANTIGA (mais de 3 meses): trate como REFERÊNCIA para cálculo/estudo apenas. Avise com naturalidade que a cotação tem X meses e os preços podem estar defasados, e ofereça disparar uma RFQ (enviar_rfq) para revalidar o preço antes de virar operação.
    • Sem data no documento: pergunte de quando é a cotação antes de propor a conversão.
    A mesma regra vale para preços vindos de buscar_ativo/precificar_referencia marcados como [COTAÇÃO ANTIGA].
+3. HISTÓRICO PRIMEIRO: na MESMA resposta em que ler a cotação, chame buscar_ativo com o produto (e confira o fornecedor). Se já houver cotação anterior do item ou do fornecedor, compare na resposta: preço anterior × atual, data e variação em %. Preço anterior zerado/vazio na base = dado inválido: diga em uma linha que o registro anterior está sem preço válido e não o use.
+4. LINHAS ALTERNATIVAS NÃO SE SOMAM: quando o MESMO item aparece em linhas que diferem só por contêiner (20GP/40HQ), faixa de quantidade/MOQ ou incoterm, são CENÁRIOS alternativos — calcule cada um separado e compare. Nunca some quantidades, pesos, totais ou sinal entre eles. Só trate como pedido único se o documento disser (total preenchido) ou a pessoa confirmar.
+5. FECHE NA MESMA RESPOSTA: com regime, UF e câmbio informados (ou premissas declaradas), rode montar_calculo para cada cenário AGORA. Proibido terminar com "na próxima mensagem eu rodo" — se o cálculo é o pedido, ele é o conteúdo da resposta.
 
 COTAÇÃO SEMI-AUTOMATIZADA COM FORNECEDORES (humano-no-loop — 2 portões de aprovação):
 - Fluxo: enviar_rfq (registra a RFQ com preço-alvo) → preparar_cotacao_fornecedor (rascunhos por fornecedor, com o alvo) → [PORTÃO 1: mostre a prévia e peça aprovação] → enviar_cotacao_fornecedor → a pessoa cola a resposta do fornecedor no chat → registrar_resposta_fornecedor (grava e compara vs alvo) → se vier acima do alvo, contraproposta_fornecedor (rascunho) → [PORTÃO 1 de novo: aprovação] → enviar_cotacao_fornecedor.
@@ -158,7 +163,7 @@ POSTURA DE MOTOR DE INTELIGÊNCIA SÊNIOR (regra dura — a consolidação acont
 - NUNCA exponha lacunas ou fragilidades internas: nada de "não consta na base", "cotações antigas (X meses)", "estimei por falta de cadastro", "a base tem NCM divergente". A atualidade do dado já entra como PESO na consolidação (precificar_referencia pondera por recência) — o resultado sai como "Preço de Referência de Mercado", ponto.
 - Quando a referência vier do mercado (e não de cotação própria), preencha a coluna Fornecedor com "Preço de Mercado" e siga normalmente.
 - PREMISSAS, NÃO DESCULPAS: o que você assumir (frete estimado pelo modal, peso típico, quantidade padrão) entra numa linha "Premissas adotadas: …" — afirmativa e profissional. Proibido tom de incerteza ("eu estimei porque não tinha", "precisa revalidar", "não existe cotação específica").
-- Pergunte APENAS o que muda estruturalmente o cálculo e não dá para assumir: regime tributário, UF de destino e margem desejada. Todo o resto (peso, quantidade, frete) entra como premissa declarada — a pessoa corrige se quiser.
+- Pergunte APENAS o que muda estruturalmente o cálculo e não dá para assumir: regime tributário, UF de destino e margem desejada — e, ANTES deles, os ATRIBUTOS QUE DEFINEM O ITEM, conforme o PROTOCOLO DE IDENTIFICAÇÃO abaixo. Todo o resto (peso, quantidade, frete) entra como premissa declarada — a pessoa corrige se quiser.
 - TABELA "Resumo por modelo" (solve reverso) — use esta estrutura, focada na decisão de compra: Modelo | Preço de venda alvo | FOB-alvo (comprar até) | Custo posto no FOB-alvo | Referência de Mercado | Leitura (folgado/justo/inviável). Números do motor, linha a linha.
 
 START DA COTAÇÃO (da estimativa para o cenário real):
@@ -182,8 +187,42 @@ RIGOR NUMÉRICO (regra dura — números incoerentes destroem a confiança):
 - SANIDADE antes de apresentar: numa mesma linha, custo posto < FOB×câmbio só é possível por CRÉDITO tributário do regime — quando ocorrer, explicite isso ("custo líquido de créditos"); se não houver explicação, refaça no motor em vez de publicar.
 - FRETE INTERNACIONAL NUNCA = 0 em estimativa de carga real: se a pessoa não deu o frete, use uma estimativa razoável pelo modal/volume (sinalizada como estimada) — carga pesada/volumosa com frete zero gera FOB-alvo irreal.
 
+PROTOCOLO DE IDENTIFICAÇÃO DO ITEM (vale para QUALQUER produto — é o que torna a análise confiável):
+- O mesmo nome comercial pode ser itens diferentes para o fisco e para o mercado. Antes de cravar NCM, preço ou barreira, verifique se o item está DETERMINADO. Ele NÃO está quando:
+    • classificar_ncm devolve confiança baixa, ou alternativas em posições/capítulos diferentes;
+    • falta um atributo que muda a NCM, a alíquota, o preço por ordem de grandeza ou o ESCOPO de uma medida de defesa comercial.
+- Atributos DISCRIMINANTES típicos (escolha os que se aplicam ao item, não todos): MATÉRIA (aço carbono × inox × alumínio; PP × PET × PVC), PROCESSO/ACABAMENTO (técnico × esmaltado; laminado a quente × a frio; galvanizado × pintado), DIMENSÃO/CAPACIDADE (bitola, espessura, volume, potência, carga), APRESENTAÇÃO (a granel × embalagem de venda; kit × peça avulsa), USO/APLICAÇÃO (industrial × doméstico; médico × estético), e NORMA/CERTIFICAÇÃO quando exigida (Inmetro, Anvisa, MAPA, Anatel).
+- PERGUNTA NUNCA BLOQUEIA A RESPOSTA. Muitas vezes a pessoa não tem o detalhe técnico — e não precisa ter. Se o item não estiver determinado:
+    1. RESPONDA JÁ com a VARIANTE MAIS COMUM no mercado brasileiro de importação daquele produto, dita de forma afirmativa ("Considerei o porcelanato técnico, que é o mais importado nessa medida").
+    2. MOSTRE ONDE O RESULTADO MUDA, em uma ou duas linhas, com o número das outras variantes quando ele for relevante ("Se for esmaltado, o antidumping não se aplica e o custo cai para X").
+    3. SÓ ENTÃO ofereça refinar: até duas perguntas, cada uma com o motivo em meia linha. Pergunta é convite, não pré-requisito.
+- Se a pessoa responder "não sei", siga com a variante mais comum e diga como ela pode descobrir (o que olhar na ficha técnica, o que pedir ao fornecedor) — sem repetir a pergunta.
+- Se o item já estiver determinado, ou se a pessoa pedir pressa: siga direto, declarando o que assumiu em "Premissas adotadas".
+
+COBERTURA MÍNIMA DE UMA ANÁLISE DE ITEM (as mesmas dimensões para qualquer produto — o que varia é a profundidade):
+1. IDENTIFICAÇÃO: NCM adotada e, quando houver risco, a alternativa e o que a decidiria.
+2. PREÇO: referência ponderada da base própria e/ou mercado, com faixa e fonte.
+3. TRIBUTOS: sempre do motor (montar_calculo) — nunca de memória.
+4. DEFESA COMERCIAL: antidumping, salvaguarda, medida compensatória e CIDE para a NCM e a ORIGEM. A base interna é parcial: se ela não registrar nada, CONFIRME pela pesquisa web nas resoluções GECEX/CAMEX antes de afirmar qualquer coisa, e cite a resolução. Nunca afirme ausência de medida sem ter verificado. Se a medida tiver escopo restrito (só um tipo do produto, só alguns fabricantes), diga qual e se o item da pessoa entra nele.
+5. TRATAMENTO ADMINISTRATIVO: licença, anuência ou certificação exigida (Inmetro, Anvisa, MAPA, Anatel, Exército, Ibama) — o que trava o desembaraço, mesmo com o custo certo.
+6. MERCADO: tamanho, principais origens e preço médio de importação, quando a pergunta for de oportunidade ou viabilidade.
+7. RISCOS E ALAVANCAS: o que pode encarecer ou inviabilizar (carga perigosa, frete volumoso, canal vermelho, prazo) e o que pode melhorar (origem alternativa, ex-tarifário, regime especial, volume).
+- PROPORCIONALIDADE: pergunta rápida recebe as dimensões em uma ou duas linhas cada, com a oferta de aprofundar; pedido de viabilidade recebe todas desenvolvidas. Omitir uma dimensão só é aceitável se ela claramente não se aplica — nunca por não ter pesquisado.
+- As dimensões 4 e 5 são as que mais derrubam operações e as que o cliente menos sabe checar. Elas não são opcionais.
+
+DESCOBERTA DE FORNECEDORES (vale para QUALQUER item — comparar fornecedores nunca termina na base):
+- A base é o ponto de partida, não o limite. Quando houver MENOS DE DOIS fornecedores atuais para o item, ou só cotações com mais de seis meses, AMPLIE em três camadas:
+    1. O QUE HÁ NA BASE: apresente de forma afirmativa (fornecedor, preço, data). Nunca encerre com "não há ranking", "preço isolado" ou "não há o que comparar".
+    2. MAPA DE ORIGENS: chame mapear_mercado_global (use classificar_ncm antes, se não tiver a NCM) — países que mais exportam o item, preço médio por país, mercados em crescimento. Destaque a origem alternativa mais competitiva e se a base depende de um país só.
+    3. CANDIDATOS: pela pesquisa web, traga 3 a 5 fabricantes ou exportadores nos países mais relevantes do mapa (sites de fabricantes, diretórios B2B, feiras e associações do setor). Para cada um: nome, país, o que o credencia (linha de produto, porte, certificações) e a fonte. Rotule como "candidatos não homologados". NUNCA atribua preço a um candidato sem fonte, e nunca os apresente como homologados.
+- FECHE COM A AÇÃO: ofereça disparar a RFQ com preço-alvo para os candidatos junto com os fornecedores atuais — é o que transforma uma referência isolada em comparação real.
+- Mesmo com dois ou mais fornecedores na base, se o mapa mostrar uma origem mais competitiva que nenhum deles cobre, diga isso.
+- PROPORÇÃO: numa pergunta rápida, o mapa e os candidatos cabem em poucas linhas; o objetivo é mostrar caminho, não um relatório de sourcing.
+
 PRECISÃO FISCAL E BARREIRAS (regra dura — compliance é papel NATIVO do sistema, nunca dever de casa para o cliente):
 - NCM NUNCA sai da sua memória: use classificar_ncm (motor certificado) e ADOTE o resultado de forma AFIRMATIVA no cálculo ("Classificação adotada: 7308.40.00 — material para andaimes e escoramentos"). Não devolva a dúvida ao cliente ("confirme com o despachante", "há divergência na base") — a validação formal aparece, no máximo, como etapa padrão do fechamento. Dica de domínio: ANDAIMES, ARMAÇÕES e ESCORAMENTOS (escoras metálicas, torres, formas) = 7308.40.00 — NÃO 7308.90.00 (outros).
+- ALÍQUOTAS SÓ DA TABELA OFICIAL (regra dura): II, IPI, PIS e COFINS que você apresenta vêm de classificar_ncm ou de montar_calculo — exatamente como a ferramenta devolveu, com a fonte entre parênteses ("II 18% — TEC"). NUNCA de memória, nunca "na faixa de". Se a ferramenta marcar "ESTIMADO por capítulo" ou "NÃO CONFIRMADAS", diga isso na mesma frase. Se a pessoa contestar uma alíquota, recalcule com a tabela (classificar_ncm/montar_calculo) e corrija sem rodeio. Base legal citada pelo classificador é raciocínio, não consulta: não cite número de Solução de Consulta/parecer como fato.
+- FALHA DE FERRAMENTA (regra dura): se montar_calculo (ou outra ferramenta do entregável) voltar ok=false, NÃO apresente números "de cabeça" no lugar do motor. Leia o campo error: se for parâmetro (unidade, peso, câmbio, NCM), corrija e chame de novo na mesma resposta; se não der, diga em UMA linha que o cálculo não fechou e o que falta.
 - SILENT CHECK DE BARREIRAS (duas camadas): (1ª) o montar_calculo JÁ DETECTA automaticamente antidumping, medidas compensatórias, salvaguardas e CIDE na base estruturada (por NCM+origem) e devolve as linhas "🛑 BARREIRA" com impacto estimado — EVIDENCIE cada uma na resposta, com o valor quando houver; quando a base disser "valor a confirmar", confirme VOCÊ o valor vigente pela pesquisa web (Resolução GECEX/CAMEX) antes de fechar números. (2ª) Complete com a pesquisa web o que a base estruturada não cobre: norma técnica/INMETRO (ex.: NBR de escoramento) e anuências (Anvisa, Inmetro, Exército…). Apresente tudo de forma AFIRMATIVA e consultiva: "Esta NCM está sujeita a X para origem Y — já considerei/recomendo Z". NUNCA como dúvida terceirizada ("checar antidumping", "verificar com despachante"). O valor de antidumping NÃO está embutido no custo do motor — some-o explicitamente ao custo final apresentado quando existir.
 - ENCERRAMENTO CONSULTIVO: feche respostas de precificação/estimativa oferecendo o start da cotação formal (RFQ aos fornecedores homologados) — números de referência apoiam a decisão; o compromisso vem da cotação real.
 
@@ -205,16 +244,16 @@ CORE REGULATÓRIO (conhecimento profundo que você aplica ativamente — sempre 
 
 REGRAS IMPORTANTES:
 - Você NÃO calcula impostos de cabeça. Para qualquer cálculo de viabilidade, custo ou margem, use montar_calculo (motor certificado). Nunca invente alíquotas.
-- A NCM sugerida é uma recomendação: peça confirmação antes de usá-la num cálculo definitivo.
+- A NCM sugerida é uma recomendação: em ESTIMATIVA, use-a como NCM adotada e declare-a; peça confirmação só antes de um cálculo DEFINITIVO (abrir operação, número para fechar negócio).
 - FINALIDADE DA IMPORTAÇÃO (muda o cálculo): pergunte se é para REVENDA (monta o CMV com impostos de saída e a margem desejada, gerando preço de venda) ou para CONSUMO PRÓPRIO do importador (uso final — sem revenda, sem markup, sem impostos de saída; o resultado é o custo nacionalizado cheio). Passe finalidade='revenda' ou 'consumo_proprio'.
 - MARGEM DESEJADA (só revenda): a margem de lucro é AJUSTÁVEL. Use a que a pessoa pedir (parâmetro margemDesejada, fração — ex.: 0.12 = 12%). Se não disser, use 5% e deixe claro que dá para alterar.
-- PARÂMETROS QUE MUDAM O CUSTO — antes de chamar montar_calculo, certifique-se de ter (perguntando de forma natural se faltar):
+- PARÂMETROS QUE MUDAM O CUSTO — use os que a pessoa informou. Se faltar algum, NÃO pare para perguntar: calcule com a premissa mais comum e declare-a, e quando a diferença for grande mostre os cenários LADO A LADO (ex.: consumo próprio × revenda; Lucro Real × Presumido). Depois ofereça refinar. Os parâmetros são:
     • regime tributário (Lucro Real, Presumido ou Simples);
     • ESTADO DE DESTINO (UF) do desembaraço — muda bastante o custo. Em SC o motor JÁ aplica automaticamente o TTD máximo (ICMS antecipado efetivo 1,0%) — NÃO pergunte "fase do TTD" nem peça ajuste manual. Outros estados têm programas próprios parametrizados (ES/FUNDAP, GO/COMEXPRODUZIR, AL/PRODESIN, MG/Corredor de Importação, PE/PRODEPE…): o motor avisa quando o estado de destino tem um programa e mantém o ICMS cheio por segurança — nesse caso, ofereça confirmar a alíquota efetiva do enquadramento da empresa para aplicar o benefício;
     • MODAL logístico (marítimo, aéreo, rodoviário) — afeta o AFRMM;
     • câmbio (use benchmark_mercado para o PTAX oficial), frete e, se houver, seguro.
-  NÃO assuma SC silenciosamente. Se a pessoa não informar a UF, pergunte antes de calcular; se ela pedir uma estimativa rápida, deixe explícito que assumiu SC e que pode refazer com a UF correta.
-- Antes de calcular, confirme com a pessoa os dados que você estruturou (human-in-the-loop).
+  NÃO assuma SC SILENCIOSAMENTE: se a pessoa não informar a UF, calcule com SC (a base de operação) e diga em uma linha que assumiu SC e que refaz na hora com outra UF. Pergunte antes só se o pedido for de número definitivo.
+- Em ESTIMATIVA, calcule direto com as premissas declaradas e ofereça ajustar — a pessoa corrige o que quiser. Confirmação explícita (human-in-the-loop) é para AÇÕES com consequência: abrir operação, enviar cotação a fornecedor, registrar compromisso, número definitivo.
 - Decisões GO/NO-GO são recomendações suas; a pessoa decide.
 - COMPLETUDE: quando estiver trabalhando uma operação, comece chamando coletar_dados_faltantes para descobrir o que falta e pergunte de forma direta e conversacional — um ou dois dados por vez, sem despejar uma lista enorme.
 - Quando a pessoa fornecer um dado faltante (cliente, origem, prazo, regime), os dados são gravados automaticamente na operação — apenas confirme de forma natural que registrou.
@@ -234,12 +273,15 @@ export interface OrchestratorInput {
    * ToolContext — catalogar_documento vincula o arquivo à proforma criada.
    */
   anexo?: AnexoTurno;
+  /** Arquivos de mensagens anteriores da conversa (mais recente primeiro). */
+  anexosConversa?: AnexoTurno[];
 }
 
 export interface OrchestratorOutput {
   reply: string;
   toolsUsed: string[];
-  toolResults: Array<{ name: string; ok: boolean; data?: unknown }>;
+  /** `error` vai junto para o histórico: sem ele, "ok: false" não diz por que o cálculo não fechou. */
+  toolResults: Array<{ name: string; ok: boolean; data?: unknown; error?: string }>;
 }
 
 export type StreamChunk =
@@ -253,6 +295,89 @@ export type StreamChunk =
 // câmbio) antes de responder; com 8 ela batia no teto e devolvia o pedido de
 // reformulação no meio do trabalho.
 const MAX_TURNS = 12;
+
+/**
+ * Teto por ferramenta. Uma etapa que passa disto é interrompida e o agente
+ * segue com o que já tem. Sem ele, uma pergunta curta ("porcelanato 80x80")
+ * chegou a 7,4 minutos e 7 ferramentas — muito depois de o proxy derrubar a
+ * conexão e o usuário ver falha.
+ */
+const TETO_FERRAMENTA_MS = 25_000;
+
+/**
+ * Prazo da rodada inteira. Passado isto, o agente para de pesquisar e entrega
+ * a resposta com o que reuniu — sem novas ferramentas e sem busca web, que são
+ * as partes lentas. Pior caso ~1 min: uma chamada ao modelo, uma ferramenta no
+ * teto e o fechamento. Num chat, uma boa resposta rápida vale mais que uma
+ * resposta perfeita que chega tarde.
+ */
+const PRAZO_RODADA_MS = 40_000;
+
+const INSTRUCAO_PRAZO =
+  "PRAZO DE RESPOSTA ATINGIDO. Não chame mais ferramentas. Responda AGORA ao usuário com o que já foi " +
+  "levantado, de forma completa e útil, no tom habitual. Se uma etapa pedida (ex.: o cálculo no motor) " +
+  "não chegou a rodar, diga isso em UMA linha e ofereça rodar já na próxima mensagem — NÃO apresente " +
+  "conta feita à mão como se fosse resultado do motor. Não mencione prazo, tempo ou limite.";
+
+/**
+ * O entregável não é pulado pelo prazo da rodada. Foi assim que a cotação de
+ * abraçadeiras ficou sem cálculo: a pesquisa de frete consumiu a rodada e as
+ * duas chamadas de montar_calculo voltaram "não executada". O teto por
+ * ferramenta continua valendo para elas.
+ */
+const FERRAMENTAS_ENTREGAVEIS = new Set(["montar_calculo", "gerar_relatorio_calculo", "catalogar_documento"]);
+
+/** Executa uma ferramenta com teto de tempo e registra quanto ela levou. */
+async function executarComTeto(
+  name: string,
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<Awaited<ReturnType<typeof runTool>>> {
+  const inicio = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limite = new Promise<Awaited<ReturnType<typeof runTool>>>((resolve) => {
+    timer = setTimeout(
+      () =>
+        resolve({
+          ok: false,
+          summary:
+            `A etapa "${name}" passou do tempo limite e foi interrompida. NÃO a chame de novo nesta ` +
+            `resposta; siga com o que já foi levantado.`,
+          error: "timeout",
+        }),
+      TETO_FERRAMENTA_MS,
+    );
+  });
+  const resultado = await Promise.race([
+    runTool(name, args, ctx).catch((e: unknown) => ({
+      ok: false,
+      summary: `A etapa "${name}" não concluiu. Siga com o que já foi levantado.`,
+      error: String((e as Error)?.message ?? e),
+    })),
+    limite,
+  ]);
+  clearTimeout(timer);
+  console.info("[perf:tool]", {
+    name,
+    ms: Date.now() - inicio,
+    ok: resultado.ok,
+    timeout: resultado.error === "timeout",
+  });
+  return resultado;
+}
+
+/** Acrescenta a instrução de fechamento ao último resultado de ferramenta. */
+function anexarInstrucaoPrazo(conversation: Message[]): void {
+  const ultimo = conversation[conversation.length - 1] as Message & { content?: unknown };
+  if (!ultimo || (ultimo as any).role !== "tool" || typeof ultimo.content !== "string") return;
+  try {
+    const obj = JSON.parse(ultimo.content);
+    obj.instrucao_sistema = INSTRUCAO_PRAZO;
+    (ultimo as any).content = JSON.stringify(obj);
+  } catch {
+    /* conteúdo não-JSON: segue sem a instrução; o tool_choice none já fecha */
+  }
+}
 
 /**
  * Sanitiza o histórico para a API da Anthropic, que rejeita blocos de texto
@@ -272,9 +397,18 @@ const MAX_TURNS = 12;
 async function buildSystemContent(userId: number, operacaoId?: number): Promise<string> {
   let prompt = EXCAMBIA_SYSTEM_PROMPT;
 
-  try {
-    const ctx = await getLearningContext(userId); // já ordenado por importância desc
-    const top = ctx.filter((c) => c.value?.trim()).slice(0, 20);
+  // Memória e snapshot da operação são independentes. Antes eram buscados em
+  // sequência, somando as duas latências em todo turno vinculado a operação.
+  // Buscamos em paralelo e mantemos o comportamento best-effort.
+  const [ctxResult, snapshotResult] = await Promise.allSettled([
+    getLearningContext(userId),
+    operacaoId
+      ? operacaoService.getOperacaoContextoChat(userId, operacaoId)
+      : Promise.resolve(null),
+  ]);
+
+  if (ctxResult.status === "fulfilled") {
+    const top = ctxResult.value.filter((c) => c.value?.trim()).slice(0, 20);
 
     // PERSONA ATIVA: se o perfil técnico já foi aprendido, vira diretriz de
     // primeira linha — a resposta já nasce calibrada (novato/intermediario/expert).
@@ -294,19 +428,18 @@ async function buildSystemContent(userId: number, operacaoId?: number): Promise<
         `necessidade. Se algo mudar ou você descobrir um novo padrão durável, registre ` +
         `com a ferramenta registrar_memoria.\n${linhas}`;
     }
-  } catch { /* memória é opcional */ }
+  }
 
-  if (operacaoId) {
-    try {
-      const snapshot = await operacaoService.getOperacaoContextoChat(userId, operacaoId);
-      if (snapshot) {
-        prompt +=
-          `\n\n## Operação vinculada a esta conversa (estado ATUAL, sincronizado com o painel)\n` +
-          snapshot +
-          `\nEste é o estado de agora — inclui o que a pessoa fez no painel. Não repita a ` +
-          `consulta para o básico; narre a partir daqui e registre os avanços que ela relatar.`;
-      }
-    } catch { /* snapshot é opcional */ }
+  if (
+    operacaoId &&
+    snapshotResult.status === "fulfilled" &&
+    snapshotResult.value
+  ) {
+    prompt +=
+      `\n\n## Operação vinculada a esta conversa (estado ATUAL, sincronizado com o painel)\n` +
+      snapshotResult.value +
+      `\nEste é o estado de agora — inclui o que a pessoa fez no painel. Não repita a ` +
+      `consulta para o básico; narre a partir daqui e registre os avanços que ela relatar.`;
   }
 
   return prompt;
@@ -399,12 +532,27 @@ function precisaRaciocinioProfundo(messages: Message[]): boolean {
   return texto.length > 600 || PADRAO_COMPLEXO.test(texto);
 }
 
+/** Lista os arquivos já enviados na conversa — o modelo só vê o conteúdo no turno do envio. */
+function notaAnexosConversa(input: OrchestratorInput): string {
+  const lista = input.anexosConversa ?? [];
+  if (!lista.length) return "";
+  const nomes = lista.slice(0, 8).map((a) => `"${a.name}"`).join(", ");
+  return (
+    `\n\nARQUIVOS JÁ ENVIADOS NESTA CONVERSA (mais recente primeiro): ${nomes}. ` +
+    `O conteúdo deles NÃO está no histórico: para usar números, itens ou condições de um deles, chame ` +
+    `reler_documento com o nome do arquivo antes de responder — nunca cite o conteúdo de memória.`
+  );
+}
+
 export async function runExcambia(input: OrchestratorInput): Promise<OrchestratorOutput> {
+  const lightText = lightTurnText(input);
+  if (lightText !== undefined) return runLightTurn(lightText);
   const ctx: ToolContext = {
     userId: input.userId,
     operacaoId: input.operacaoId,
     estagio: input.estagio,
     anexo: input.anexo,
+    anexosConversa: input.anexosConversa,
   };
 
   const toolSchemas = getToolSchemas(input.estagio);
@@ -413,16 +561,19 @@ export async function runExcambia(input: OrchestratorInput): Promise<Orchestrato
 
   // monta a conversa com o system prompt da Excambia (histórico compactado se longo)
   const conversation: Message[] = [
-    { role: "system", content: await buildSystemContent(input.userId, input.operacaoId) },
+    { role: "system", content: (await buildSystemContent(input.userId, input.operacaoId)) + notaAnexosConversa(input) },
     ...(await compactarHistorico(sanitizeMessages(input.messages))),
   ];
 
   // Cadeia de pensamento nativa nas análises complexas (uma decisão por mensagem).
   const profundo = precisaRaciocinioProfundo(input.messages);
   const effort = profundo ? ("xhigh" as const) : ("high" as const);
+  const model = modelForTurn(input.messages, profundo);
 
   let turns = 0;
   let llmCalls = 0;
+  const inicioRodada = Date.now();
+  let fecharAgora = false;
 
   while (turns < MAX_TURNS) {
     turns++;
@@ -436,15 +587,26 @@ export async function runExcambia(input: OrchestratorInput): Promise<Orchestrato
 
     const result = await invokeLLM({
       messages: conversation,
+      // As ferramentas continuam declaradas mesmo no fechamento: o histórico tem
+      // blocos tool_use, e a API os exige. Quem impede nova chamada é o "none"
+      // — que também cobre a ferramenta nativa de busca web.
       tools: toolSchemas.length > 0 ? toolSchemas : undefined,
-      tool_choice: toolSchemas.length > 0 ? "auto" : undefined,
+      tool_choice: toolSchemas.length > 0 ? (fecharAgora ? "none" : "auto") : undefined,
       // Pesquisa web nativa (legislação, fiscal, logística, mercado, commodities).
+      //
+      // Continua DECLARADA no fechamento, assim como o raciocínio: o histórico
+      // já tem blocos de busca e de pensamento, e a API recusa (400) histórico
+      // com esses blocos quando a ferramenta ou o modo somem no meio do turno —
+      // foi a falha "instabilidade" do teste. Quem impede novas buscas e
+      // ferramentas é o tool_choice "none".
       webSearch: true,
       thinking: profundo,
       effort,
       // Teto de saída alto: catalogar uma cotação grande gera argumentos de
       // tool com dezenas de itens — com o default (4096) o JSON era cortado.
-      maxTokens: 16000,
+      // No fechamento não há argumento de tool, só texto: teto menor, mais rápido.
+      maxTokens: fecharAgora ? 4000 : 16000,
+      model,
     });
 
     const choice = result.choices?.[0]?.message;
@@ -478,9 +640,9 @@ export async function runExcambia(input: OrchestratorInput): Promise<Orchestrato
         args = {};
       }
 
-      const toolResult = await runTool(name, args, ctx);
+      const toolResult = await executarComTeto(name, args, ctx);
       toolsUsed.push(name);
-      toolResults.push({ name, ok: toolResult.ok, data: toolResult.data });
+      toolResults.push({ name, ok: toolResult.ok, data: toolResult.data, ...(toolResult.error ? { error: toolResult.error } : {}) });
 
       // devolve o resultado da tool como mensagem 'tool'
       conversation.push({
@@ -506,11 +668,18 @@ export async function runExcambia(input: OrchestratorInput): Promise<Orchestrato
 }
 
 export async function* runExcambiaStream(input: OrchestratorInput): AsyncGenerator<StreamChunk> {
+  const lightText = lightTurnText(input);
+  if (lightText !== undefined) {
+    yield { type: "thinking", content: "Pensando..." };
+    yield { type: "reply", ...(await runLightTurn(lightText)) };
+    return;
+  }
   const ctx: ToolContext = {
     userId: input.userId,
     operacaoId: input.operacaoId,
     estagio: input.estagio,
     anexo: input.anexo,
+    anexosConversa: input.anexosConversa,
   };
 
   const toolSchemas = getToolSchemas(input.estagio);
@@ -518,16 +687,19 @@ export async function* runExcambiaStream(input: OrchestratorInput): AsyncGenerat
   const toolResults: OrchestratorOutput["toolResults"] = [];
 
   const conversation: Message[] = [
-    { role: "system", content: await buildSystemContent(input.userId, input.operacaoId) },
+    { role: "system", content: (await buildSystemContent(input.userId, input.operacaoId)) + notaAnexosConversa(input) },
     ...(await compactarHistorico(sanitizeMessages(input.messages))),
   ];
 
   // Cadeia de pensamento nativa nas análises complexas (uma decisão por mensagem).
   const profundo = precisaRaciocinioProfundo(input.messages);
   const effort = profundo ? ("xhigh" as const) : ("high" as const);
+  const model = modelForTurn(input.messages, profundo);
 
   let turns = 0;
   let llmCalls = 0;
+  const inicioRodada = Date.now();
+  let fecharAgora = false;
 
   while (turns < MAX_TURNS) {
     turns++;
@@ -546,7 +718,9 @@ export async function* runExcambiaStream(input: OrchestratorInput): AsyncGenerat
 
     yield {
       type: "thinking",
-      content: profundo ? "Analisando em profundidade..." : "Pensando...",
+      content: fecharAgora
+        ? "Consolidando a resposta..."
+        : profundo ? "Analisando em profundidade..." : "Pensando...",
     };
 
     // A Excambia CONCLUI o raciocínio em segundo plano (só o indicador de
@@ -556,15 +730,21 @@ export async function* runExcambiaStream(input: OrchestratorInput): AsyncGenerat
     // entrega".
     const result = await invokeLLM({
       messages: conversation,
+      // As ferramentas continuam declaradas mesmo no fechamento: o histórico tem
+      // blocos tool_use, e a API os exige. Quem impede nova chamada é o "none".
       tools: toolSchemas.length > 0 ? toolSchemas : undefined,
-      tool_choice: toolSchemas.length > 0 ? "auto" : undefined,
-      // Pesquisa web nativa (legislação, fiscal, logística, mercado, commodities).
+      tool_choice: toolSchemas.length > 0 ? (fecharAgora ? "none" : "auto") : undefined,
+      // Pesquisa web e raciocínio continuam DECLARADOS no fechamento: o
+      // histórico já tem esses blocos e a API recusa (400) quando somem no meio
+      // do turno. Quem impede novas buscas e ferramentas é o tool_choice "none".
       webSearch: true,
       thinking: profundo,
       effort,
       // Teto de saída alto: catalogar uma cotação grande gera argumentos de
       // tool com dezenas de itens — com o default (4096) o JSON era cortado.
-      maxTokens: 16000,
+      // No fechamento não há argumento de tool, só texto: teto menor, mais rápido.
+      maxTokens: fecharAgora ? 4000 : 16000,
+      model,
     });
 
     const choice = result.choices?.[0]?.message;
@@ -602,9 +782,13 @@ export async function* runExcambiaStream(input: OrchestratorInput): AsyncGenerat
 
       yield { type: "tool_call", name, args };
 
-      const toolResult = await runTool(name, args, ctx);
+      // Prazo já estourado no meio do lote: não executa o resto, mas responde a
+      // cada tool_use (a API exige um tool_result para cada um).
+      const toolResult = Date.now() - inicioRodada > PRAZO_RODADA_MS && !FERRAMENTAS_ENTREGAVEIS.has(name)
+        ? { ok: false, summary: `Etapa "${name}" não executada — siga com o que já foi levantado.`, error: "prazo" }
+        : await executarComTeto(name, args, ctx);
       toolsUsed.push(name);
-      toolResults.push({ name, ok: toolResult.ok, data: toolResult.data });
+      toolResults.push({ name, ok: toolResult.ok, data: toolResult.data, ...(toolResult.error ? { error: toolResult.error } : {}) });
 
       yield {
         type: "tool_result",
@@ -623,6 +807,16 @@ export async function* runExcambiaStream(input: OrchestratorInput): AsyncGenerat
           error: toolResult.error ?? null,
         }),
       } as Message);
+    }
+
+    // Prazo da rodada: a próxima chamada ao modelo é de FECHAMENTO.
+    if (!fecharAgora && Date.now() - inicioRodada > PRAZO_RODADA_MS) {
+      fecharAgora = true;
+      anexarInstrucaoPrazo(conversation);
+      console.info("[perf:chat] prazo atingido — fechando com o que há", {
+        ms: Date.now() - inicioRodada,
+        ferramentas: toolsUsed.length,
+      });
     }
   }
 

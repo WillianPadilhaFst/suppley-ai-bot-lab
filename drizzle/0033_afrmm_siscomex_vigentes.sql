@@ -11,7 +11,7 @@ UPDATE `tax_parameters`
        `legalBasis` = 'Lei 14.301/2022 (BR do Mar) — longo curso 8%',
        `notes` = 'Incide apenas sobre frete marítimo (longo curso).'
  WHERE `paramKey` = 'AFRMM_RATE' AND `valueBp` <> 800;
-
+--> statement-breakpoint
 UPDATE `tax_parameters`
    SET `valueCents` = 15423,
        `notes` = 'Valor por DI (base + adições).'

@@ -39,7 +39,7 @@ ALTER TABLE operacao_marcos MODIFY COLUMN tipo ENUM(
   -- Fase 9 — Entrega e fechamento
   'carga_liberada','entregue','operacao_fechada'
 ) NOT NULL;
-
+--> statement-breakpoint
 -- ---------- 2) operacao_eventos.tipo — + "marco_registrado" ----------
 ALTER TABLE operacao_eventos MODIFY COLUMN tipo ENUM(
   'demanda_criada','operacao_criada','rfq_enviada','cotacao_recebida',

@@ -20,13 +20,17 @@ SET @col_exists := (
     AND TABLE_NAME = 'proformas'
     AND COLUMN_NAME = 'quotationDate'
 );
+--> statement-breakpoint
 SET @ddl := IF(@col_exists = 0,
   'ALTER TABLE proformas ADD COLUMN quotationDate TIMESTAMP NULL AFTER moq',
   'SELECT 1 /* quotationDate já existe em proformas */');
+--> statement-breakpoint
 PREPARE stmt FROM @ddl;
+--> statement-breakpoint
 EXECUTE stmt;
+--> statement-breakpoint
 DEALLOCATE PREPARE stmt;
-
+--> statement-breakpoint
 -- 2) (Opcional) Índice para queries cronológicas
 --    Útil para getProductPriceHistory e getSupplierCatalog.
 --    MySQL 8.0 NÃO suporta "CREATE INDEX IF NOT EXISTS", então usamos
@@ -37,9 +41,13 @@ SET @idx_exists := (
     AND TABLE_NAME = 'proformas'
     AND INDEX_NAME = 'idx_proformas_quotation_date'
 );
+--> statement-breakpoint
 SET @idx_ddl := IF(@idx_exists = 0,
   'CREATE INDEX idx_proformas_quotation_date ON proformas(userId, quotationDate)',
   'SELECT 1 /* índice idx_proformas_quotation_date já existe */');
+--> statement-breakpoint
 PREPARE idx_stmt FROM @idx_ddl;
+--> statement-breakpoint
 EXECUTE idx_stmt;
+--> statement-breakpoint
 DEALLOCATE PREPARE idx_stmt;

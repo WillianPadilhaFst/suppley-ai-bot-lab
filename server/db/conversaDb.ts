@@ -1,3 +1,5 @@
+import { getOwnOperation } from "../services/publicOperations";
+import { getUserById } from "../services/authService";
 /**
  * Operações de banco de dados para CONVERSAS da Excambia.
  * Camada de abstração sobre Drizzle — torna conversasRouter agnóstico ao banco.
@@ -113,6 +115,10 @@ export async function createConversa(
   const db = await getDb();
   if (!db) throw new Error("Banco de dados indisponível");
 
+  if (input.operacaoId) {
+    const user = await getUserById(userId); if (!user) throw new Error('Unauthorized');
+    await getOwnOperation(user, input.operacaoId);
+  }
   const values = {
     userId,
     titulo: input.titulo || "Nova conversa",
@@ -213,6 +219,39 @@ export async function getConversaMessages(conversaId: number, userId: number) {
     .orderBy(conversaMensagens.criadaEm);
 }
 
+/**
+ * Arquivos enviados nesta conversa, mais recente primeiro. A referência é
+ * gravada junto da mensagem do usuário (toolResults = [{ name: "anexo", data }]).
+ */
+export async function anexosDaConversa(
+  conversaId: number,
+): Promise<Array<{ fileKey: string; name: string; mimeType?: string }>> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({ toolResults: conversaMensagens.toolResults })
+    .from(conversaMensagens)
+    .where(and(eq(conversaMensagens.conversaId, conversaId), eq(conversaMensagens.role, "user")))
+    .orderBy(desc(conversaMensagens.id))
+    .limit(60);
+  const out: Array<{ fileKey: string; name: string; mimeType?: string }> = [];
+  for (const r of rows) {
+    const lista = typeof r.toolResults === "string" ? safeJson(r.toolResults) : r.toolResults;
+    if (!Array.isArray(lista)) continue;
+    for (const item of lista as any[]) {
+      const d = item?.name === "anexo" ? item.data : null;
+      if (d && typeof d.fileKey === "string" && typeof d.name === "string") {
+        out.push({ fileKey: d.fileKey, name: d.name, mimeType: typeof d.mimeType === "string" ? d.mimeType : undefined });
+      }
+    }
+  }
+  return out;
+}
+
+function safeJson(s: string): unknown {
+  try { return JSON.parse(s); } catch { return null; }
+}
+
 export async function addMessage(
   conversaId: number,
   role: "user" | "assistant" | "system" | "tool",
@@ -245,6 +284,8 @@ export async function linkConversaToOperacao(
   operacaoId: number | null,
   estagio?: EstagioConversa
 ) {
+  const user = await getUserById(userId); if (!user) throw new Error('Unauthorized');
+  if (operacaoId) await getOwnOperation(user, operacaoId);
   const db = await getDb();
   if (!db) return null;
 
