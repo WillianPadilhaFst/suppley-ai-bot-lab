@@ -39,6 +39,7 @@ describe.skipIf(!url)("MySQL migration and owner isolation", () => {
         "utf8",
       );
       for (const statement of migration
+        .replaceAll("--> statement-breakpoint", "")
         .split(";")
         .map((s) => s.trim())
         .filter(Boolean))
@@ -48,6 +49,7 @@ describe.skipIf(!url)("MySQL migration and owner isolation", () => {
         "utf8",
       );
       for (const statement of intakeMigration
+        .replaceAll("--> statement-breakpoint", "")
         .split(";")
         .map((v) => v.trim())
         .filter(Boolean))
@@ -112,6 +114,7 @@ describe.skipIf(!url)("MySQL migration and owner isolation", () => {
         "utf8",
       );
       for (const statement of migration
+        .replaceAll("--> statement-breakpoint", "")
         .split(";")
         .map((v) => v.trim())
         .filter((v) => /^CREATE TABLE security_(audit|limits)/.test(v)))
