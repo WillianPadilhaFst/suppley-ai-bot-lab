@@ -77,11 +77,11 @@ export async function getQuotationStats(userId: number) {
   };
   
   const result = await db.select({
-    totalQuotations: sql<number>`COUNT(*)`,
-    viableCount: sql<number>`SUM(CASE WHEN status IN ('viable', 'approved', 'ordered', 'shipped', 'customs', 'nationalized', 'completed') THEN 1 ELSE 0 END)`,
-    inProgressCount: sql<number>`SUM(CASE WHEN status IN ('ordered', 'shipped', 'customs') THEN 1 ELSE 0 END)`,
-    completedCount: sql<number>`SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)`,
-    totalValueBrl: sql<number>`COALESCE(SUM(${quotations.totalCostCents}), 0)`,
+    totalQuotations: sql<number>`COUNT(*)`.mapWith(Number),
+    viableCount: sql<number>`COALESCE(SUM(CASE WHEN status IN ('viable', 'approved', 'ordered', 'shipped', 'customs', 'nationalized', 'completed') THEN 1 ELSE 0 END), 0)`.mapWith(Number),
+    inProgressCount: sql<number>`COALESCE(SUM(CASE WHEN status IN ('ordered', 'shipped', 'customs') THEN 1 ELSE 0 END), 0)`.mapWith(Number),
+    completedCount: sql<number>`COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0)`.mapWith(Number),
+    totalValueBrl: sql<number>`COALESCE(SUM(${quotations.totalCostCents}), 0)`.mapWith(Number),
   }).from(quotations).where(eq(quotations.userId, userId));
   
   return result[0] || { totalQuotations: 0, viableCount: 0, inProgressCount: 0, completedCount: 0, totalValueBrl: 0 };
