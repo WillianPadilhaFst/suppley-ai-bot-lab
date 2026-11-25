@@ -46,3 +46,15 @@ describe("LLM usage recording", () => {
     expect(JSON.stringify(warn.mock.calls)).not.toContain("sensitive");
   });
 });
+
+ it("normalizes DeepSeek cache counters to the shared result contract", async () => {
+  vi.stubEnv("LLM_PROVIDER", "deepseek");
+  vi.stubEnv("DEEPSEEK_API_KEY", "test-only");
+  vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({
+    id: "deepseek-test", model: "deepseek-chat", choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
+    usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, prompt_cache_hit_tokens: 60 },
+  }) } as Response);
+  const result = await invokeLLM(request);
+  expect(result.usage).toEqual({ prompt_tokens: 100, completion_tokens: 20, total_tokens: 120,
+    cache_creation_input_tokens: 0, cache_read_input_tokens: 60 });
+ });

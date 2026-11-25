@@ -116,6 +116,10 @@ export type InvokeParams = {
    * O modelo decide quando pesquisar; a busca roda no servidor da Anthropic e o
    * texto volta com citações — sem chave de API externa. Use para pesquisa de
    * legislação, fiscal, logística, mercado financeiro e commodities.
+   *
+   * No provider DeepSeek a busca NÃO é nativa: `web_search` é uma tool comum,
+   * executada por nós via TAVILY_API_KEY ou BRAVE_API_KEY (ver runWebSearch).
+   * A assinatura é a mesma, então o chamador não precisa saber qual está ativo.
    */
   webSearch?: boolean;
   /** Limite de buscas por chamada (default 5). */
@@ -150,6 +154,13 @@ export const MODELS = {
   fast: "claude-haiku-4-5", // tarefas determinísticas/simples (NCM, classificações)
   balanced: "claude-sonnet-5", // análise de complexidade média
   smart: "claude-opus-5", // raciocínio estratégico (orquestrador)
+} as const;
+
+/** IDs de modelo DeepSeek (API compatível com OpenAI). */
+export const DEEPSEEK_MODELS = {
+  fast: "deepseek-chat", // tarefas determinísticas/simples
+  balanced: "deepseek-chat", // análise de complexidade média
+  smart: "deepseek-reasoner", // raciocínio estratégico (orquestrador)
 } as const;
 
 export type ToolCall = {
@@ -317,7 +328,364 @@ const assertApiKey = () => {
   }
 };
 
+// ============================================================
+// DEEPSEEK (OpenAI-compatible) provider
+// ============================================================
+// O DeepSeek expõe uma API no formato OpenAI (chat/completions). O fluxo de
+// mensagens genérico (Message[]) já é estilo OpenAI, então a conversão é direta
+// — sem os blocos tool_use/thinking da Anthropic.
+const toOpenAIMessages = (
+  messages: Message[]
+): Array<Record<string, unknown>> => {
+  const asPlainText = (content: MessageContent | MessageContent[]): string =>
+    ensureArray(content)
+      .map((part) =>
+        typeof part === "string"
+          ? part
+          : part.type === "text"
+            ? part.text
+            : JSON.stringify(part)
+      )
+      .join("\n");
+
+  const out: Array<Record<string, unknown>> = [];
+  for (const message of messages) {
+    if (message.role === "system") {
+      out.push({ role: "system", content: asPlainText(message.content) });
+      continue;
+    }
+    if (message.role === "tool" || message.role === "function") {
+      out.push({
+        role: "tool",
+        tool_call_id: message.tool_call_id,
+        content: asPlainText(message.content),
+      });
+      continue;
+    }
+    if (message.role === "assistant" && message.tool_calls?.length) {
+      out.push({
+        role: "assistant",
+        content: asPlainText(message.content) || null,
+        tool_calls: message.tool_calls.map((call) => ({
+          id: call.id,
+          type: "function",
+          function: {
+            name: call.function.name,
+            arguments: call.function.arguments,
+          },
+        })),
+      });
+      continue;
+    }
+    out.push({ role: message.role, content: asPlainText(message.content) });
+  }
+  return out;
+};
+
+// ============================================================
+// BUSCA WEB no provider DeepSeek
+// ============================================================
+// O Claude tem pesquisa web NATIVA (server-side). O DeepSeek não — então aqui a
+// busca é uma ferramenta que NÓS executamos: o modelo chama `web_search`, o
+// resultado volta como mensagem `tool` e o loop continua até ele responder.
+// Mantém a mesma assinatura de `InvokeParams.webSearch` usada no caminho
+// Anthropic, para o chamador não precisar saber qual provider está ativo.
+const WEB_SEARCH_TOOL: Tool = {
+  type: "function",
+  function: {
+    name: "web_search",
+    description:
+      "Pesquisa na web e devolve resultados atuais com título, URL e trecho. " +
+      "Use para legislação, dados fiscais, cotações, logística e qualquer " +
+      "informação que possa ter mudado recentemente.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Consulta de busca em linguagem natural.",
+        },
+      },
+      required: ["query"],
+    },
+  },
+};
+
+/** Trecho de resultado, normalizado entre os provedores de busca. */
+type WebSearchHit = { title: string; url: string; snippet: string };
+
+/**
+ * Executa a busca. Usa o provedor configurado por env:
+ *  - TAVILY_API_KEY -> https://api.tavily.com/search
+ *  - BRAVE_API_KEY  -> https://api.search.brave.com/res/v1/web/search
+ * Sem chave, devolve lista vazia e o modelo é avisado disso.
+ */
+async function runWebSearch(query: string, maxResults = 5): Promise<WebSearchHit[]> {
+  const q = (query ?? "").trim();
+  if (!q) return [];
+
+  const tavily = process.env.TAVILY_API_KEY ?? "";
+  const brave = process.env.BRAVE_API_KEY ?? "";
+
+  try {
+    if (tavily) {
+      const res = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          api_key: tavily,
+          query: q,
+          max_results: maxResults,
+          search_depth: "basic",
+        }),
+      });
+      if (!res.ok) return [];
+      const data = (await res.json()) as any;
+      return (data.results ?? []).slice(0, maxResults).map((r: any) => ({
+        title: r.title ?? "",
+        url: r.url ?? "",
+        snippet: r.content ?? r.snippet ?? "",
+      }));
+    }
+
+    if (brave) {
+      const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=${maxResults}`;
+      const res = await fetch(url, {
+        headers: {
+          accept: "application/json",
+          "x-subscription-token": brave,
+        },
+      });
+      if (!res.ok) return [];
+      const data = (await res.json()) as any;
+      return (data.web?.results ?? []).slice(0, maxResults).map((r: any) => ({
+        title: r.title ?? "",
+        url: r.url ?? "",
+        snippet: r.description ?? "",
+      }));
+    }
+  } catch {
+    // Falha de busca não pode derrubar a análise: devolvemos vazio e o modelo
+    // segue respondendo com o que já tem.
+    return [];
+  }
+
+  return [];
+}
+
+function formatWebSearchHits(hits: WebSearchHit[]): string {
+  if (hits.length === 0) {
+    return "Nenhum resultado de busca disponível (provedor ausente ou sem retorno).";
+  }
+  return hits
+    .map((h, i) => `[${i + 1}] ${h.title}\n${h.url}\n${h.snippet}`)
+    .join("\n\n");
+}
+
+async function invokeDeepSeek(params: InvokeParams): Promise<InvokeResult> {
+  if (!ENV.deepseekApiKey) {
+    throw new Error("DEEPSEEK_API_KEY is not configured");
+  }
+
+  const {
+    messages,
+    tools,
+    toolChoice,
+    tool_choice,
+    maxTokens,
+    max_tokens,
+    model,
+    responseFormat,
+    response_format,
+    webSearch,
+    webSearchMaxUses,
+  } = params;
+
+  const requestedMax = max_tokens || maxTokens || 4096;
+  const modeloAtual = model || DEEPSEEK_MODELS.smart;
+  const webSearchEnabled = !!webSearch;
+
+  const payload: Record<string, unknown> = {
+    model: modeloAtual,
+    max_tokens: requestedMax,
+    messages: toOpenAIMessages(messages),
+  };
+
+  // Tools no formato OpenAI (o mesmo Tool[] já usado no fluxo genérico).
+  // A busca web, quando ligada, entra como UMA tool a mais (não é server-side
+  // como no Claude): quem executa é o loop abaixo.
+  if (tools && tools.length > 0) {
+    payload.tools = [...tools, ...(webSearchEnabled ? [WEB_SEARCH_TOOL] : [])];
+    const tc = toolChoice || tool_choice;
+    if (tc === "none") {
+      payload.tool_choice = "none";
+    } else if (tc === "required") {
+      payload.tool_choice = "required";
+    } else if (tc && typeof tc === "object" && "name" in tc) {
+      payload.tool_choice = {
+        type: "function",
+        function: { name: (tc as ToolChoiceByName).name },
+      };
+    }
+    // "auto" (ou ausente) é o default da API — não enviamos.
+  } else if (webSearchEnabled) {
+    payload.tools = [WEB_SEARCH_TOOL];
+    payload.tool_choice = "auto";
+  }
+
+  // Saída estruturada: o DeepSeek suporta response_format json_object.
+  const rf = responseFormat ?? response_format;
+  if (rf && rf.type === "json_object") {
+    payload.response_format = { type: "json_object" };
+  }
+
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    authorization: `Bearer ${ENV.deepseekApiKey}`,
+  };
+
+  const callDeepSeek = async (p: Record<string, unknown>) => {
+    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(p),
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `DeepSeek invoke failed: ${response.status} ${response.statusText} – ${errorText}`
+      );
+    }
+    return (await response.json()) as any;
+  };
+
+  let result = await callDeepSeek(payload);
+
+  // ------------------------------------------------------------
+  // LOOP DA BUSCA WEB
+  // ------------------------------------------------------------
+  // Com `webSearch` ligado, `web_search` fica disponível e o modelo decide se
+  // chama. Cada rodada executa as buscas pedidas e devolve os resultados como
+  // mensagens `tool`, até o modelo parar de pedir (ou estourar o teto abaixo).
+  if (webSearchEnabled) {
+    const maxRounds = 5;
+    let round = 0;
+    while (round < maxRounds) {
+      const pending = (result.choices?.[0]?.message?.tool_calls ?? []).filter(
+        (c: any) => c?.function?.name === "web_search",
+      );
+      if (pending.length === 0) break;
+
+      if (round === maxRounds - 1) {
+        // Última rodada: corta a busca e força uma resposta em texto, senão o
+        // loop gastaria chamadas sem entregar nada ao usuário.
+        delete (payload as any).tools;
+        (payload as any).tool_choice = "none";
+        (payload.messages as Array<Record<string, unknown>>).push({
+          role: "system",
+          content:
+            "O limite de buscas foi atingido nesta rodada. Responda agora com o que você já tem.",
+        });
+        result = await callDeepSeek(payload);
+        break;
+      }
+
+      const assistantMsg = result.choices[0].message;
+      (payload.messages as Array<Record<string, unknown>>).push({
+        role: "assistant",
+        content: assistantMsg.content ?? null,
+        tool_calls: pending.map((c: any) => ({
+          id: c.id,
+          type: "function",
+          function: {
+            name: c.function.name,
+            arguments: c.function.arguments,
+          },
+        })),
+      });
+
+      for (const call of pending) {
+        let args: { query?: string } = {};
+        try {
+          args = JSON.parse(call.function.arguments || "{}");
+        } catch {
+          args = {};
+        }
+        const hits = await runWebSearch(args.query ?? "", webSearchMaxUses ?? 5);
+        (payload.messages as Array<Record<string, unknown>>).push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: formatWebSearchHits(hits),
+        });
+      }
+
+      result = await callDeepSeek(payload);
+      round++;
+    }
+  }
+
+  if (!result) {
+    throw new Error("DeepSeek invoke failed: resposta vazia");
+  }
+
+  const choice = result.choices?.[0];
+  const msg = choice?.message ?? {};
+
+  if (result.usage) {
+    void recordLlmUsage({
+      model: result.model ?? modeloAtual,
+      promptTokens: result.usage.prompt_tokens ?? 0,
+      completionTokens: result.usage.completion_tokens ?? 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+    }).catch(() => {});
+  }
+
+  const toolCalls = (msg.tool_calls ?? []).map((call: any) => ({
+    id: call.id,
+    type: "function" as const,
+    function: {
+      name: call.function.name,
+      arguments:
+        typeof call.function.arguments === "string"
+          ? call.function.arguments
+          : JSON.stringify(call.function.arguments),
+    },
+  }));
+
+  const textContent: string = msg.content ?? "";
+
+  return {
+    id: result.id,
+    created: result.created ?? Math.floor(Date.now() / 1000),
+    model: result.model,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content: textContent,
+          ...(toolCalls.length > 0 && { tool_calls: toolCalls }),
+        },
+        finish_reason: choice?.finish_reason ?? null,
+      },
+    ],
+    usage: result.usage
+      ? {
+          prompt_tokens: result.usage.prompt_tokens,
+          completion_tokens: result.usage.completion_tokens,
+          total_tokens: result.usage.total_tokens,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: result.usage.prompt_cache_hit_tokens ?? 0,
+        }
+      : undefined,
+  };
+}
+
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
+  if (ENV.llmProvider === "deepseek") {
+    return invokeDeepSeek(params);
+  }
   assertApiKey();
 
   const {

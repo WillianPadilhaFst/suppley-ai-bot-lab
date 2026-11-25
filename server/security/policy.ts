@@ -25,6 +25,7 @@ export const anonymousPaths = new Set([
   "auth.me",
   "auth.login",
   "auth.register",
+  "auth.requestAccess",
   "auth.logout",
   "auth.requestPasswordReset",
   "auth.resetPassword",
