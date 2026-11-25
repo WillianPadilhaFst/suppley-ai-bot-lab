@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { and, eq, desc, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import {
@@ -84,6 +85,10 @@ export async function getOwnOperation(user: Principal, id: number) {
     .limit(100);
   return { ...operation, milestones, history };
 }
+export const publicOperationInput = z.object({
+  titulo: z.string().trim().min(1).max(255),
+});
+
 export async function createOwnOperation(user: Principal, titulo: string) {
   requireApproved(user);
   await consumeLimit(`operation-create:${user.id}`, 10, 86400000);

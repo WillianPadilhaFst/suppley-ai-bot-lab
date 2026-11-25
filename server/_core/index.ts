@@ -1,3 +1,5 @@
+import { mcpRouter } from "../mcp/router";
+import { apiDiscoveryRouter, integrationRouter } from "../routes/integrationRoute";
 import { consumeLimit } from "../security/abuse";
 import "dotenv/config";
 import express from "express";
@@ -49,6 +51,10 @@ async function startServer() {
       next();
     } catch {res.sendStatus(429);}
   });
+  app.use(apiDiscoveryRouter);
+  app.use("/api/v1", integrationRouter);
+  app.use("/mcp", express.json({ limit: "64kb" }));
+  app.use(mcpRouter);
   app.use('/api/chat/stream', express.json({limit:'128kb'}));
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));

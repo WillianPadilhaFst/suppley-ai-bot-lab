@@ -100,8 +100,61 @@ export async function submitQuoteRequest(
     !(await conversaPertenceAoUsuario(conversaId, user.id))
   )
     throw new TRPCError({ code: "NOT_FOUND" });
+  return persistQuoteRequest(user, input, conversaId, [
+    user.id,
+    conversaId,
+    input,
+  ]);
+}
+
+export const integrationRequestKey = z
+  .string()
+  .regex(/^[A-Za-z0-9._~-]{1,128}$/);
+export const publicRecordId = z.number().int().positive().max(2_147_483_647);
+
+export async function getOwnQuoteRequest(user: Principal, id: number) {
+  requireApproved(user);
+  const [request] = await database()
+    .select(fields)
+    .from(publicQuoteRequests)
+    .where(
+      and(
+        eq(publicQuoteRequests.userId, user.id),
+        eq(publicQuoteRequests.id, id),
+      ),
+    )
+    .limit(1);
+  if (!request) throw new TRPCError({ code: "NOT_FOUND" });
+  return request;
+}
+
+export async function submitIntegrationQuoteRequest(
+  user: Principal,
+  raw: unknown,
+  idempotencyKey: string,
+) {
+  requireApproved(user);
+  const input = quoteRequestInput.parse(raw);
+  const key = integrationRequestKey.parse(idempotencyKey);
+  const saved = await persistQuoteRequest(user, input, null, [
+    "integration",
+    key,
+  ]);
+  const matches = (Object.keys(input) as Array<keyof typeof input>).every(
+    (field) => saved[field] === input[field],
+  );
+  if (!matches) throw new TRPCError({ code: "CONFLICT" });
+  return saved;
+}
+
+async function persistQuoteRequest(
+  user: Principal,
+  input: z.infer<typeof quoteRequestInput>,
+  conversaId: number | null,
+  identity: unknown[],
+) {
   const requestKey = createHash("sha256")
-    .update(JSON.stringify([user.id, conversaId, input]))
+    .update(JSON.stringify(identity))
     .digest("hex");
   const db = database();
   const condition = and(
@@ -213,28 +266,24 @@ export async function startQuoteOperation(user: Principal, id: number) {
         message: "Reabra a análise antes de criar a operação.",
       });
     // Separate deterministic prefix avoids affecting the existing OP-year counter.
-    const [result] = await tx
-      .insert(operacoes)
-      .values({
-        userId: request.userId,
-        codigo: `SOL-${request.id}`,
-        titulo: request.produto,
-        estagioAtual: "demand",
-        status: "ativa",
-        modo: "desenvolvimento",
-        responsavelId: user.id,
-      });
+    const [result] = await tx.insert(operacoes).values({
+      userId: request.userId,
+      codigo: `SOL-${request.id}`,
+      titulo: request.produto,
+      estagioAtual: "demand",
+      status: "ativa",
+      modo: "desenvolvimento",
+      responsavelId: user.id,
+    });
     const operacaoId = Number(result.insertId);
     await tx.insert(operacaoEstagios).values({ operacaoId, estagio: "demand" });
-    await tx
-      .insert(operacaoEventos)
-      .values({
-        operacaoId,
-        tipo: "operacao_criada",
-        estagio: "demand",
-        autor: "usuario",
-        titulo: "Operação criada para atendimento da solicitação de cotação",
-      });
+    await tx.insert(operacaoEventos).values({
+      operacaoId,
+      tipo: "operacao_criada",
+      estagio: "demand",
+      autor: "usuario",
+      titulo: "Operação criada para atendimento da solicitação de cotação",
+    });
     await tx
       .update(publicQuoteRequests)
       .set({ operacaoId, status: "vinculada" })
