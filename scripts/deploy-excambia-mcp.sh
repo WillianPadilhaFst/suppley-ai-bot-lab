@@ -79,6 +79,16 @@ print(json.dumps({"services": {sys.argv[1]: {"environment": {
 PYTHON
 mv "$login_override.partial" "$login_override"
 base+=(-f "$login_override")
+
+# Compose versions may escape dollar signs for reloading rendered output.
+# Measure the serializer with a public value before comparing real settings.
+if ! EXCAMBIA_COMPOSE_PROBE='active$dollar' docker compose -p excambia-render-probe -f - \
+  config --format json > "$scratch/probe.json" 2>"$scratch/probe.log" <<'JSON'
+{"services":{"probe":{"image":"scratch","environment":{"PROBE":"${EXCAMBIA_COMPOSE_PROBE}"}}}}
+JSON
+then
+  die "Não foi possível verificar a saída de configuração do Compose."
+fi
 cat > "$scratch/check.py" <<'PY'
 import json
 import sys
@@ -100,11 +110,15 @@ if container["Image"] != image["Id"]:
     raise SystemExit("A tag anterior aponta para outra imagem. O retorno não está garantido.")
 actual = env(container["Config"]["Env"])
 resolved = env(image["Config"]["Env"])
+probe = read("probe")["services"]["probe"]["environment"]["PROBE"]
+if probe not in ("active$dollar", "active$$dollar"):
+    raise SystemExit("Formato inesperado na saída do Compose.")
 for name, value in compose.get("environment", {}).items():
     if value is None:
         resolved.pop(name, None)
     else:
-        resolved[name] = str(value)
+        rendered = str(value)
+        resolved[name] = rendered.replace("$$", "$") if probe == "active$$dollar" else rendered
 different = sorted(key for key in actual.keys() | resolved.keys() if actual.get(key) != resolved.get(key))
 if different:
     raise SystemExit("Variáveis do Compose diferentes das variáveis em execução: " + ", ".join(different))
