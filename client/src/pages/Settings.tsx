@@ -430,7 +430,7 @@ function UsuariosTab() {
                       <td className="px-4 py-3">
                         <p className="font-medium text-foreground">{u.name || "—"}</p>
                         <p className="text-xs text-muted-foreground">{u.email}</p>
-                        {u.role === 'public' && <div className="flex gap-2 mt-2 items-center"><span>{u.approvalStatus}</span><Button size="sm" disabled={approveMut.isPending} onClick={()=>approveMut.mutate({id:u.id,status:'approved'})}>Aprovar</Button><Button size="sm" variant="outline" disabled={approveMut.isPending} onClick={()=>approveMut.mutate({id:u.id,status:'rejected'})}>Suspender</Button></div>}
+                        {u.role === 'public' && <div className="flex gap-2 mt-2 items-center"><span>{u.approvalStatus}</span>{u.approvalStatus !== 'approved' && (<Button size="sm" disabled={approveMut.isPending} onClick={()=>approveMut.mutate({id:u.id,status:'approved'})}>Aprovar</Button>)}<Button size="sm" variant="outline" disabled={approveMut.isPending} onClick={()=>approveMut.mutate({id:u.id,status:'rejected'})}>Suspender</Button></div>}
                       </td>
                       <td className="px-4 py-3">
                         {u.role === "admin" ? (
