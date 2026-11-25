@@ -32,6 +32,11 @@ export default function Login() {
       utils.auth.me.setData(undefined, data.user);
       toast.success("Login realizado com sucesso!");
       // Excambia é o cérebro do sistema: o usuário cai direto nela ao entrar.
+      const oauth = new URLSearchParams(window.location.search).get("oauth");
+      if (oauth && /^[A-Za-z0-9_-]{1,128}$/.test(oauth)) {
+        window.location.assign(`/oauth/interacao/${oauth}`);
+        return;
+      }
       setLocation("/excambia");
     },
     onError: (error) => {

@@ -17,7 +17,8 @@ vi.mock("../db/conversaDb", async (original) => ({
   conversaPertenceAoUsuario: mocks.owns,
   getConversa: mocks.conversation,
 }));
-vi.mock("../services/publicOperations", () => ({
+vi.mock("../services/publicOperations", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../services/publicOperations")>()),
   getOwnOperation: mocks.getOp,
   listOwnOperations: vi.fn(),
   createOwnOperation: vi.fn(),
