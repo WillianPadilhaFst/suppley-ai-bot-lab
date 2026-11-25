@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set +x
 set -euo pipefail
 umask 077
 export COMPOSE_REMOVE_ORPHANS=false
@@ -47,6 +48,37 @@ scratch=$(mktemp -d)
 trap 'rm -rf -- "$scratch"' EXIT
 docker inspect "$app" > "$scratch/container.json"
 docker image inspect "$old_image" > "$scratch/image.json"
+IFS= read -r -d '' EXCAMBIA_DEPLOY_JWT < <(python3 - "$scratch/container.json" <<'PYTHON'
+import json
+import sys
+
+with open(sys.argv[1]) as fp:
+    container = json.load(fp)[0]
+secrets = [item.split("=", 1)[1] for item in container["Config"]["Env"] if item.startswith("JWT_SECRET=")]
+if len(secrets) == 1 and secrets[0].strip():
+    sys.stdout.write(secrets[0] + "\0")
+PYTHON
+) || die "A chave JWT do container ativo não foi encontrada."
+export EXCAMBIA_DEPLOY_JWT
+export JWT_SECRET="$EXCAMBIA_DEPLOY_JWT"
+export SUPPLEY_LOGIN_JWT_ATIVO="$EXCAMBIA_DEPLOY_JWT"
+
+install -d -m 700 "$settings"
+exec 9>"$settings/deploy.lock"
+flock -n 9 || die "Já existe outro deploy em andamento."
+
+login_override="$settings/login-env.json"
+python3 - "$service" > "$login_override.partial" <<'PYTHON'
+import json
+import sys
+
+# Interpolate from the deployment process. The file contains the name, not the key.
+print(json.dumps({"services": {sys.argv[1]: {"environment": {
+    "JWT_SECRET": "${EXCAMBIA_DEPLOY_JWT:?Chave JWT ativa obrigatória}"
+}}}}))
+PYTHON
+mv "$login_override.partial" "$login_override"
+base+=(-f "$login_override")
 cat > "$scratch/check.py" <<'PY'
 import json
 import sys
@@ -93,10 +125,6 @@ if [[ "$mode" == --check ]]; then
   printf 'Pré-checagem OK. Projeto %s, serviço %s, imagem atual %s.\n' "$project" "$service" "$old_image"
   exit 0
 fi
-
-install -d -m 700 "$settings"
-exec 9>"$settings/deploy.lock"
-flock -n 9 || die "Já existe outro deploy em andamento."
 
 override="$settings/mcp-9ac164b.json"
 if [[ ! -s "$override" ]]; then
@@ -147,6 +175,11 @@ done
 [[ "$(inspect '{{.Config.Image}}')" == "$new_image" &&
    "$(inspect '{{.State.Health.Status}}')" == healthy &&
    "$(docker inspect --format '{{.Id}}' "$db")" == "$db_id" ]] || rollback
+docker inspect "$app" | python3 -c '
+import json, os, sys
+values = json.load(sys.stdin)[0]["Config"]["Env"]
+sys.exit("JWT_SECRET=" + os.environ["EXCAMBIA_DEPLOY_JWT"] not in values)
+' || rollback
 curl -fsS --max-time 12 "$origin/health" > "$scratch/health.json" || rollback
 curl -fsSL --max-time 12 "$origin/.well-known/oauth-authorization-server/oauth"   > "$scratch/oauth.json" || rollback
 curl -fsS --max-time 12 "$origin/.well-known/oauth-protected-resource/mcp"   > "$scratch/mcp.json" || rollback
