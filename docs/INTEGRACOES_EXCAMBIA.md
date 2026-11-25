@@ -61,3 +61,19 @@ Em cada implantação, configure `MCP_RESOURCE_URL=https://<host-do-ambiente>/mc
 5. Confirme a descoberta OAuth, autenticação com o cliente real, criação da solicitação e aparecimento na fila, leitura do protocolo, repetição idempotente e bloqueio do protocolo de outra conta. Use um token de cada audiência e verifique que a outra interface o rejeita. Verifique também que um token emitido para outro ambiente é rejeitado.
 
 Para desativar uma interface, volte a variável correspondente para `false` e recarregue apenas o serviço da aplicação.
+
+## Criar os recursos no Auth0
+
+No painel Auth0, crie o tenant da organização. Use um tenant de teste e um de produção quando ambos estiverem disponíveis. Para cada ambiente com URL pública, rode o comando abaixo para revisar os recursos e escopos antes de cadastrá-los.
+
+```sh
+node scripts/configure-excambia-auth0.mjs \
+  --tenant https://seu-tenant.auth0.com \
+  --app-url https://seu-ambiente.exemplo.com
+```
+
+Execute novamente com `--apply` para cadastrar as duas APIs. O comando usa um token administrativo temporário na variável de ambiente `AUTH0_MANAGEMENT_TOKEN`, com `read:resource_servers` e `create:resource_servers`. A saída contém os endereços públicos para configurar o serviço. O comando apenas cria recursos ausentes e sinaliza divergências em recursos existentes.
+
+No painel do tenant, habilite **Settings → Advanced → Resource Parameter Compatibility Profile** para que o Auth0 use o parâmetro `resource` que o cliente MCP envia como audiência do token. Cadastre a aplicação-piloto com as URLs de callback exatas e o fluxo Authorization Code com PKCE. Use a política de acesso por aplicação para conceder os escopos necessários à aplicação-piloto. Clientes registrados por descoberta podem ser habilitados conforme a forma de registro e o suporte do cliente escolhido. Referências oficiais do Auth0 sobre o [parâmetro de recurso](https://support.auth0.com/center/s/article/mcp-audience-error-with-auth0) e a [política de acesso a APIs](https://auth0.com/blog/developers-guide-api-access-policies-auth0/).
+
+Crie o vínculo individual em `mcp_identities` com o `sub` e o identificador do cliente do token de acesso. Mantenha o login do portal disponível para aprovar e identificar a conta da Excambia que receberá esse vínculo. Valide a emissão do token e o acesso de ponta a ponta conforme a seção anterior.
