@@ -4,10 +4,14 @@
 
 -- Quotations table
 ALTER TABLE `quotations` ADD COLUMN `royaltiesCents` bigint DEFAULT 0 NOT NULL;
+--> statement-breakpoint
 ALTER TABLE `quotations` ADD COLUMN `assistsCents` bigint DEFAULT 0 NOT NULL;
+--> statement-breakpoint
 ALTER TABLE `quotations` ADD COLUMN `commissionsCents` bigint DEFAULT 0 NOT NULL;
-
+--> statement-breakpoint
 -- Import Calculations table
 ALTER TABLE `import_calculations` ADD COLUMN `royaltiesCents` bigint DEFAULT 0 NOT NULL;
+--> statement-breakpoint
 ALTER TABLE `import_calculations` ADD COLUMN `assistsCents` bigint DEFAULT 0 NOT NULL;
+--> statement-breakpoint
 ALTER TABLE `import_calculations` ADD COLUMN `commissionsCents` bigint DEFAULT 0 NOT NULL;

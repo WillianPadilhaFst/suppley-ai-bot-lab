@@ -35,13 +35,15 @@ SET @existe := (
     AND table_name   = 'ncm_tax_rates'
     AND index_name   = 'ft_ncm_description'
 );
-
+--> statement-breakpoint
 SET @ddl := IF(
   @existe = 0,
   'ALTER TABLE ncm_tax_rates ADD FULLTEXT INDEX ft_ncm_description (description)',
   'SELECT ''ft_ncm_description ja existe — nada a fazer'' AS aviso'
 );
-
+--> statement-breakpoint
 PREPARE stmt FROM @ddl;
+--> statement-breakpoint
 EXECUTE stmt;
+--> statement-breakpoint
 DEALLOCATE PREPARE stmt;

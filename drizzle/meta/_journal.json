@@ -120,6 +120,279 @@
       "when": 1765807958435,
       "tag": "0016_abnormal_taskmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1765807958436,
+      "tag": "0017_motor_v2_initial",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1765807958437,
+      "tag": "0018_add_ttd_financial_costs",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1765807958438,
+      "tag": "0019_add_customs_value_adjustments",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1765807958439,
+      "tag": "0020_operacoes_fase2_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1765807958440,
+      "tag": "0021_operacao_anexos",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "5",
+      "when": 1765807958441,
+      "tag": "0022_operacao_financeiro",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "5",
+      "when": 1765807958442,
+      "tag": "0023_operacao_marcos",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1765807958443,
+      "tag": "0024_conversas",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1765807958444,
+      "tag": "0024a_industries_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1765807958445,
+      "tag": "migrations-fase5",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "5",
+      "when": 1765807958446,
+      "tag": "migrations-conversas-fixada",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "5",
+      "when": 1765807958447,
+      "tag": "0025_sprint1_proformas",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "5",
+      "when": 1765807958448,
+      "tag": "0026_unify_suppliers_to_industries",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1765807958449,
+      "tag": "0027_add_quotation_date_to_proformas",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "5",
+      "when": 1765807958450,
+      "tag": "0028_widen_product_name_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1765807958451,
+      "tag": "0029_add_description_to_proforma_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1765807958452,
+      "tag": "0030_add_classification_to_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "5",
+      "when": 1765807958453,
+      "tag": "0031_operacoes_jornada_unificada",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "5",
+      "when": 1765807958454,
+      "tag": "0032_parametros_de_calculo",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "5",
+      "when": 1765807958455,
+      "tag": "0033_afrmm_siscomex_vigentes",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "5",
+      "when": 1765807958456,
+      "tag": "0034_port_storage_min",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "5",
+      "when": 1765807958457,
+      "tag": "0035_llm_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "5",
+      "when": 1765807958458,
+      "tag": "0036_admin_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "5",
+      "when": 1765807958459,
+      "tag": "0037_proforma_supplier_sector",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "5",
+      "when": 1765807958460,
+      "tag": "0038_supplier_ratings",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "5",
+      "when": 1765807958461,
+      "tag": "0039_rfq_outreach_quotes",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "5",
+      "when": 1765807958462,
+      "tag": "0040_proforma_file_key_optional_price",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "5",
+      "when": 1765807958463,
+      "tag": "0041_widen_proforma_file_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "5",
+      "when": 1765807958464,
+      "tag": "0042_decimal_quantity",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "5",
+      "when": 1765807958465,
+      "tag": "0043_marco_responsavel_vencimento",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "5",
+      "when": 1765807958466,
+      "tag": "0044_trade_barriers",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "5",
+      "when": 1765807958467,
+      "tag": "0045_drop_market_reference_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "5",
+      "when": 1765807958468,
+      "tag": "0046_marcos_granulares",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "5",
+      "when": 1765807958469,
+      "tag": "0047_operacao_rota",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "5",
+      "when": 1765807958470,
+      "tag": "0048_drop_openai_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "5",
+      "when": 1765807958471,
+      "tag": "0049_ncm_fulltext",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "5",
+      "when": 1765807958472,
+      "tag": "0050_public_access_mcp",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "5",
+      "when": 1765807958473,
+      "tag": "0051_public_quote_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "5",
+      "when": 1765807958474,
+      "tag": "0052_restore_missing_schema",
+      "breakpoints": true
     }
   ]
 }

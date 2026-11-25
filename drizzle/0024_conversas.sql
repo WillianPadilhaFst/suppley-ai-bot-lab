@@ -17,10 +17,12 @@ CREATE TABLE `conversas` (
   `atualizadaEm` timestamp NOT NULL DEFAULT (now()) ON UPDATE now(),
   CONSTRAINT `conversas_id` PRIMARY KEY(`id`)
 );
-
+--> statement-breakpoint
 CREATE INDEX `idx_conversas_user` ON `conversas` (`userId`);
+--> statement-breakpoint
 CREATE INDEX `idx_conversas_operacao` ON `conversas` (`operacaoId`);
-
+--> statement-breakpoint
 -- Vincula mensagens existentes/novas a uma conversa (NULL = histórico legado).
 ALTER TABLE `sofia_chat_messages` ADD COLUMN `conversaId` int;
+--> statement-breakpoint
 CREATE INDEX `idx_chat_conversa` ON `sofia_chat_messages` (`conversaId`);

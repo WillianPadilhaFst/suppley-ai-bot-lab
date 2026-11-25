@@ -15,9 +15,9 @@ CREATE TABLE `operacao_marcos` (
   `criadoEm` timestamp NOT NULL DEFAULT (now()),
   CONSTRAINT `operacao_marcos_id` PRIMARY KEY(`id`)
 );
-
+--> statement-breakpoint
 CREATE INDEX `idx_marcos_operacao` ON `operacao_marcos` (`operacaoId`);
-
+--> statement-breakpoint
 -- Expand operacao_eventos.tipo enum to include milestone events (timeline coesion)
 ALTER TABLE `operacao_eventos` MODIFY COLUMN `tipo` enum(
   'demanda_criada','operacao_criada','rfq_enviada','cotacao_recebida',

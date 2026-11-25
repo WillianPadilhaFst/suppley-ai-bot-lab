@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS `supplier_outreach` (
 	`createdAt` timestamp NOT NULL DEFAULT (now()),
 	CONSTRAINT `supplier_outreach_id` PRIMARY KEY(`id`)
 );
-
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS `supplier_quotes` (
 	`id` int AUTO_INCREMENT NOT NULL,
 	`rfqId` int NOT NULL,
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS `supplier_quotes` (
 	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
 	CONSTRAINT `supplier_quotes_id` PRIMARY KEY(`id`)
 );
-
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS `supplier_quote_items` (
 	`id` int AUTO_INCREMENT NOT NULL,
 	`supplierQuoteId` int NOT NULL,

@@ -1,5 +1,7 @@
+// Full history: RUN_MIGRATIONS_MYSQL=1 npm test -- server/quotations.mysql.test.ts
 // Run explicitly: RUN_QUOTATIONS_MYSQL=1 npm test -- server/quotations.mysql.test.ts
 // Requires Docker. Always creates its own disposable MySQL; never uses DATABASE_URL.
+import { readFileSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -9,7 +11,22 @@ import { getDb, resetDbConnection } from "./db/connection";
 import * as helpers from "./db/quotationsDb";
 import { quotations, importCalculations } from "../drizzle/schema";
 
-const enabled = process.env.RUN_QUOTATIONS_MYSQL === "1";
+const migrationMode = process.env.RUN_MIGRATIONS_MYSQL === "1";
+const enabled = migrationMode || process.env.RUN_QUOTATIONS_MYSQL === "1";
+
+it("registers every historical migration exactly once in dependency order", () => {
+  const journal = JSON.parse(readFileSync("./drizzle/meta/_journal.json", "utf8"));
+  const files = readdirSync("./drizzle").filter(name => /^\d{4}[a-z]?_.*\.sql$/.test(name) || /^migrations-.*\.sql$/.test(name));
+  const tags = journal.entries.map((entry: { tag: string }) => entry.tag);
+  expect([...tags].sort()).toEqual(files.map(file => file.slice(0, -4)).sort());
+  expect(new Set(tags).size).toBe(tags.length);
+  journal.entries.forEach((entry: { idx: number; when: number }, index: number) => {
+    expect(entry.idx).toBe(index);
+    if (index) expect(entry.when).toBeGreaterThan(journal.entries[index - 1].when);
+  });
+  expect(tags.indexOf("0024a_industries_baseline")).toBeLessThan(tags.indexOf("migrations-fase5"));
+  expect(tags.indexOf("migrations-fase5")).toBeLessThan(tags.indexOf("0025_sprint1_proformas"));
+});
 
 describe.skipIf(!enabled)("Quotations with isolated MySQL 8.4", () => {
   const name = `quotations-test-${randomUUID()}`;
@@ -48,6 +65,18 @@ describe.skipIf(!enabled)("Quotations with isolated MySQL 8.4", () => {
       }
     }
     if (!ready) throw new Error("Disposable MySQL did not become ready");
+    if (migrationMode) {
+      const { migrate } = await import("drizzle-orm/mysql2/migrator");
+      await migrate(database, { migrationsFolder: "./drizzle" });
+      await database.execute("INSERT INTO users (email, name) VALUES ('migration-sentinel@example.invalid', 'Preserved')");
+      const [before] = await database.$client.promise().query("SELECT COUNT(*) AS n FROM __drizzle_migrations");
+      await migrate(database, { migrationsFolder: "./drizzle" });
+      const [after] = await database.$client.promise().query("SELECT COUNT(*) AS n FROM __drizzle_migrations");
+      expect(after).toEqual(before);
+      const [sentinel] = await database.$client.promise().query("SELECT name FROM users WHERE email = 'migration-sentinel@example.invalid'");
+      expect(sentinel).toEqual([{ name: "Preserved" }]);
+      return;
+    }
     // Generate DDL from the application's current schema, without using its DB config.
     const ddl = execFileSync(process.execPath, [
       fileURLToPath(new URL("../node_modules/drizzle-kit/bin.cjs", import.meta.url)),
@@ -72,6 +101,23 @@ describe.skipIf(!enabled)("Quotations with isolated MySQL 8.4", () => {
   beforeEach(async () => {
     await database.execute("TRUNCATE TABLE import_calculations");
     await database.execute("TRUNCATE TABLE quotations");
+  });
+
+  it.skipIf(!migrationMode)("matches all current application tables and columns after migration", async () => {
+    const { is } = await import("drizzle-orm");
+    const { MySqlTable, getTableConfig } = await import("drizzle-orm/mysql-core");
+    const appSchema = await import("../drizzle/schema");
+    const rfqSchema = await import("../drizzle/rfqSchema");
+    const [columns] = await database.$client.promise().query("SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()");
+    const present = new Set((columns as unknown as { TABLE_NAME: string; COLUMN_NAME: string }[]).map(c => `${c.TABLE_NAME}.${c.COLUMN_NAME}`));
+    const missing: string[] = [];
+    for (const table of Object.values({ ...appSchema, ...rfqSchema })) {
+      if (!is(table, MySqlTable)) continue;
+      const config = getTableConfig(table);
+      for (const column of config.columns) if (!present.has(`${config.name}.${column.name}`)) missing.push(`${config.name}.${column.name}`);
+    }
+
+    expect(missing).toEqual([]);
   });
 
   it("creates, reads, lists, updates and filters persisted quotations", async () => {

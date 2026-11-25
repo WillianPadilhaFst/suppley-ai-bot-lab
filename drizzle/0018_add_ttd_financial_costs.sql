@@ -4,12 +4,18 @@
 
 -- Quotations table
 ALTER TABLE `quotations` ADD COLUMN `icmsAntecipadoCents` bigint DEFAULT 0 NOT NULL;
+--> statement-breakpoint
 ALTER TABLE `quotations` ADD COLUMN `icmsDiferidoCents` bigint DEFAULT 0 NOT NULL;
+--> statement-breakpoint
 ALTER TABLE `quotations` ADD COLUMN `iofCents` bigint DEFAULT 0 NOT NULL;
+--> statement-breakpoint
 ALTER TABLE `quotations` ADD COLUMN `spreadCents` bigint DEFAULT 0 NOT NULL;
-
+--> statement-breakpoint
 -- Import Calculations table
 ALTER TABLE `import_calculations` ADD COLUMN `icmsAntecipadoCents` bigint DEFAULT 0 NOT NULL;
+--> statement-breakpoint
 ALTER TABLE `import_calculations` ADD COLUMN `icmsDiferidoCents` bigint DEFAULT 0 NOT NULL;
+--> statement-breakpoint
 ALTER TABLE `import_calculations` ADD COLUMN `iofCents` bigint DEFAULT 0 NOT NULL;
+--> statement-breakpoint
 ALTER TABLE `import_calculations` ADD COLUMN `spreadCents` bigint DEFAULT 0 NOT NULL;

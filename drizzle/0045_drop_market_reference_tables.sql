@@ -13,5 +13,7 @@
 -- ============================================================
 
 DROP TABLE IF EXISTS market_reference_ncm;
+--> statement-breakpoint
 DROP TABLE IF EXISTS market_trend_ncm;
+--> statement-breakpoint
 DROP TABLE IF EXISTS etl_runs;

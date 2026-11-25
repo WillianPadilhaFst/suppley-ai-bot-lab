@@ -21,17 +21,29 @@ SET @col_exists := (
   SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'operacao_marcos' AND COLUMN_NAME = 'responsavel'
 );
+--> statement-breakpoint
 SET @ddl := IF(@col_exists = 0,
   'ALTER TABLE operacao_marcos ADD COLUMN responsavel ENUM(''cliente'',''excambia'',''fornecedor'',''agente'',''despachante'',''anuente'',''sistema'') NULL AFTER status',
   'SELECT 1 /* operacao_marcos.responsavel já existe */');
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
+--> statement-breakpoint
+PREPARE stmt FROM @ddl;
+--> statement-breakpoint
+EXECUTE stmt;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt;
+--> statement-breakpoint
 -- ---------- 2) operacao_marcos.vencimento ----------
 SET @col_exists := (
   SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'operacao_marcos' AND COLUMN_NAME = 'vencimento'
 );
+--> statement-breakpoint
 SET @ddl := IF(@col_exists = 0,
   'ALTER TABLE operacao_marcos ADD COLUMN vencimento TIMESTAMP NULL AFTER responsavel',
   'SELECT 1 /* operacao_marcos.vencimento já existe */');
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+--> statement-breakpoint
+PREPARE stmt FROM @ddl;
+--> statement-breakpoint
+EXECUTE stmt;
+--> statement-breakpoint
+DEALLOCATE PREPARE stmt;

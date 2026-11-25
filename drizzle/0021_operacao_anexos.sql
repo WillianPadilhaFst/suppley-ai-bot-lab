@@ -17,9 +17,9 @@ CREATE TABLE `operacao_anexos` (
   `criadoEm` timestamp NOT NULL DEFAULT (now()),
   CONSTRAINT `operacao_anexos_id` PRIMARY KEY(`id`)
 );
-
+--> statement-breakpoint
 CREATE INDEX `idx_anexos_operacao` ON `operacao_anexos` (`operacaoId`);
-
+--> statement-breakpoint
 -- Expand operacao_eventos.tipo enum to include attachment events (timeline coesion)
 ALTER TABLE `operacao_eventos` MODIFY COLUMN `tipo` enum(
   'demanda_criada','operacao_criada','rfq_enviada','cotacao_recebida',

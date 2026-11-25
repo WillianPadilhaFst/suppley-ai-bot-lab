@@ -3,17 +3,20 @@
 ALTER TABLE users MODIFY COLUMN role ENUM('user','admin','public') NOT NULL DEFAULT 'user',
  ADD COLUMN approvalStatus ENUM('pending','approved','rejected') NOT NULL DEFAULT 'approved',
  ADD COLUMN sessionVersion INT NOT NULL DEFAULT 0;
+--> statement-breakpoint
 CREATE TABLE security_audit (
  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
  actorId INT NULL, action VARCHAR(100) NOT NULL, outcome VARCHAR(30) NOT NULL,
  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
  INDEX idx_security_audit_actor (actorId,createdAt)
 );
+--> statement-breakpoint
 CREATE TABLE security_limits (
  bucketKey CHAR(64) NOT NULL, bucket BIGINT NOT NULL, used INT NOT NULL,
  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
  PRIMARY KEY(bucketKey,bucket), INDEX idx_security_limits_created (createdAt)
 );
+--> statement-breakpoint
 CREATE TABLE mcp_identities (
  id INT AUTO_INCREMENT PRIMARY KEY,
  issuer VARCHAR(255) NOT NULL, subject VARCHAR(255) NOT NULL,
