@@ -21,8 +21,12 @@ vi.mock("./abuse", () => ({
   audit: vi.fn(async () => {}),
   consumeLimit: vi.fn(async () => {}),
 }));
+import { router } from "../_core/trpc";
+import { consumeLimit } from "./abuse";
 import { authRouter } from "../routers/authRouter";
 import { loginUser } from "../services/authService";
+// Preserve the real auth.* middleware paths without loading unrelated application routes.
+const registrationRouter = router({ auth: authRouter });
 const pending = {
   id: 1,
   name: "External",
@@ -40,14 +44,7 @@ describe("controlled registration", () => {
   it("never grants role by owner email or client role and never creates a session", async () => {
     mocks.rows.mockResolvedValueOnce([]).mockResolvedValueOnce([pending]);
     const cookie = vi.fn();
-    const caller = authRouter.createCaller({
-      user: null,
-      req: { ip: "test", headers: {} },
-      res: { cookie },
-    } as any);
-    // Prefix is supplied by the application router in normal calls; use it below.
-    const { appRouter } = await import("../routers");
-    const api = appRouter.createCaller({
+    const api = registrationRouter.createCaller({
       user: null,
       req: { ip: "test", headers: {} },
       res: { cookie },
@@ -67,6 +64,7 @@ describe("controlled registration", () => {
     );
     expect(result).toEqual({ success: true, pendingApproval: true });
     expect(cookie).not.toHaveBeenCalled();
+    expect(consumeLimit).toHaveBeenCalledWith("auth:test", 20, 60000);
   });
   it("does not allow pending accounts to log in even with a valid password", async () => {
     mocks.rows.mockResolvedValue([pending]);
