@@ -4,8 +4,11 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 const { chromium } = await import(pathToFileURL(path.join(process.env.SUPPLEY_PLAYWRIGHT_DIR, 'index.mjs')).href);
 const app=express();const root=path.resolve('dist/public');
+// Bound filesystem requests even on the loopback-only smoke server.
+app.use(rateLimit({ windowMs: 60_000, limit: 1000, standardHeaders: 'draft-8', legacyHeaders: false }));
 app.use(express.static(root));app.get('*',(_req,res)=>res.sendFile(path.join(root,'index.html')));
 const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
 const base=`http://127.0.0.1:${server.address().port}`;
