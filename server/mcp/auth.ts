@@ -1,3 +1,10 @@
+import { findOAuthAccount } from "../oauth/account";
+import { MysqlOAuthAdapter } from "../oauth/adapter";
+import {
+  getLocalKeyResolver,
+  getOAuthIssuer,
+  localOAuthIssuer,
+} from "../oauth/config";
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 import { sql } from "drizzle-orm";
 import { getDb } from "../db/connection";
@@ -21,17 +28,23 @@ export async function verifyMcpToken(
   key?: JWTVerifyGetKey,
   audience = process.env.MCP_RESOURCE_URL,
 ): Promise<McpIdentity> {
-  const issuer = process.env.MCP_OAUTH_ISSUER,
+  const issuer = getOAuthIssuer(),
+    localIssuer = localOAuthIssuer(),
     jwksUrl = process.env.MCP_JWKS_URL;
   if (
     !issuer ||
     !audience ||
-    !jwksUrl ||
-    ![issuer, audience, jwksUrl].every((v) => v.startsWith("https://"))
+    !audience.startsWith("https://") ||
+    !issuer.startsWith("https://") ||
+    (!localIssuer && !jwksUrl?.startsWith("https://"))
   )
     throw new Error("MCP OAuth not configured");
-  jwks ??= createRemoteJWKSet(new URL(jwksUrl));
-  const { payload } = await jwtVerify(token, key ?? jwks, {
+  const resolver =
+    key ??
+    (localIssuer
+      ? getLocalKeyResolver()
+      : (jwks ??= createRemoteJWKSet(new URL(jwksUrl!))));
+  const { payload } = await jwtVerify(token, resolver, {
     issuer,
     audience,
     algorithms: ["RS256", "ES256"],
@@ -45,6 +58,27 @@ export async function verifyMcpToken(
     typeof payload.scope !== "string"
   )
     throw new Error("Invalid identity");
+  if (localIssuer) {
+    if (typeof payload.excambia_grant !== "string")
+      throw new Error("Missing consent");
+    const grant = await new MysqlOAuthAdapter("Grant").find(
+      payload.excambia_grant,
+    );
+    if (grant?.accountId !== payload.sub || grant.clientId !== client)
+      throw new Error("Revoked consent");
+    const user = await findOAuthAccount(payload.sub);
+    requireApproved(user);
+    return {
+      user,
+      scopes: new Set(
+        payload.scope
+          .split(" ")
+          .filter((scope) =>
+            integrationScopes.some((allowed) => allowed === scope),
+          ),
+      ),
+    };
+  }
   const db = await getDb();
   if (!db) throw new Error("Unavailable");
   const [rows] = await db.execute(

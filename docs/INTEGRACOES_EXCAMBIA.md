@@ -50,30 +50,46 @@ A criação de operação recebe um JSON com `titulo`. Cada envio cria uma opera
 | Homologação | Variáveis no próprio serviço e banco de homologação | Use o domínio e o cliente OAuth desse ambiente para testar a conexão e a fila comercial. |
 | Produção | `.env.production` no deploy via Compose | Use o domínio público e o cliente OAuth de produção. Valide primeiro com uma conta-piloto aprovada. |
 
-Em cada implantação, configure `MCP_RESOURCE_URL=https://<host-do-ambiente>/mcp` e `INTEGRATION_API_RESOURCE_URL=https://<host-do-ambiente>/api/v1`. Cadastre essas duas audiências no provedor OAuth e defina o emissor e a URL do JWKS do ambiente. O proxy HTTPS deve preservar o host público nas requisições encaminhadas ao app.
+## Ativar o OAuth da Excambia
 
-## Ativar e validar
+Em cada implantação, aplique o histórico de migrações até `0053_excambia_oauth` e configure:
 
-1. Confirme que o banco do ambiente tem as migrações versionadas registradas, incluindo `0050_public_access_mcp` e `0051_public_quote_requests`.
-2. Configure um provedor OAuth compatível com o cliente MCP e cadastre cada aplicação integradora. Configure `MCP_OAUTH_ISSUER`, `MCP_JWKS_URL`, `MCP_RESOURCE_URL` e `INTEGRATION_API_RESOURCE_URL`.
-3. Vincule `issuer`, `subject` e `clientId` verificados no provedor ao `userId` aprovado da Excambia em `mcp_identities`. Conceda os escopos de acordo com a aplicação. Emita um token novo após criar ou atualizar o vínculo.
-4. Revise a autorização no ambiente em questão e habilite `MCP_AUTHORIZATION_REVIEWED` e as interfaces que serão testadas (`MCP_ENABLED` e/ou `INTEGRATION_API_ENABLED`). Ambas vêm desligadas por padrão.
-5. Confirme a descoberta OAuth, autenticação com o cliente real, criação da solicitação e aparecimento na fila, leitura do protocolo, repetição idempotente e bloqueio do protocolo de outra conta. Use um token de cada audiência e verifique que a outra interface o rejeita. Verifique também que um token emitido para outro ambiente é rejeitado.
+| Variável | Valor |
+| --- | --- |
+| `APP_URL` | Origem HTTPS do ambiente |
+| `MCP_RESOURCE_URL` | `https://<host>/mcp` |
+| `INTEGRATION_API_RESOURCE_URL` | `https://<host>/api/v1` |
+| `EXCAMBIA_OAUTH_JWKS` | JWKS privado com uma chave RSA para o ambiente |
+| `EXCAMBIA_OAUTH_CLIENTS` | JSON dos clientes cadastrados e suas URLs de retorno |
+| `EXCAMBIA_OAUTH_CHATGPT` | `true` para aceitar o cliente oficial do ChatGPT via CIMD |
+| `EXCAMBIA_OAUTH_ENABLED` | `true` para iniciar o emissor próprio |
 
-Para desativar uma interface, volte a variável correspondente para `false` e recarregue apenas o serviço da aplicação.
-
-## Criar os recursos no Auth0
-
-No painel Auth0, crie o tenant da organização. Use um tenant de teste e um de produção quando ambos estiverem disponíveis. Para cada ambiente com URL pública, rode o comando abaixo para revisar os recursos e escopos antes de cadastrá-los.
+O emissor é `https://<host>/oauth`. O proxy HTTPS deve preservar o host público e informar o esquema HTTPS ao app. Gere a chave no terminal do ambiente e salve o valor no gerenciador de segredos. Exemplo de geração em arquivo local com acesso restrito:
 
 ```sh
-node scripts/configure-excambia-auth0.mjs \
-  --tenant https://seu-tenant.auth0.com \
-  --app-url https://seu-ambiente.exemplo.com
+umask 077
+node --input-type=module -e 'import { generateKeyPairSync, randomUUID } from "node:crypto"; const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 }); console.log(JSON.stringify({ keys: [{ ...privateKey.export({ format: "jwk" }), kid: randomUUID() }] }));' > excambia-oauth-jwks.json
 ```
 
-Execute novamente com `--apply` para cadastrar as duas APIs. O comando usa um token administrativo temporário na variável de ambiente `AUTH0_MANAGEMENT_TOKEN`, com `read:resource_servers` e `create:resource_servers`. A saída contém os endereços públicos para configurar o serviço. O comando apenas cria recursos ausentes e sinaliza divergências em recursos existentes.
+Use chaves independentes por ambiente. A descoberta pública expõe apenas a parte pública da chave.
 
-No painel do tenant, habilite **Settings → Advanced → Resource Parameter Compatibility Profile** para que o Auth0 use o parâmetro `resource` que o cliente MCP envia como audiência do token. Cadastre a aplicação-piloto com as URLs de callback exatas e o fluxo Authorization Code com PKCE. Use a política de acesso por aplicação para conceder os escopos necessários à aplicação-piloto. Clientes registrados por descoberta podem ser habilitados conforme a forma de registro e o suporte do cliente escolhido. Referências oficiais do Auth0 sobre o [parâmetro de recurso](https://support.auth0.com/center/s/article/mcp-audience-error-with-auth0) e a [política de acesso a APIs](https://auth0.com/blog/developers-guide-api-access-policies-auth0/).
+Cadastre um cliente OAuth público por integração, com a URL de retorno exata fornecida pelo aplicativo. Exemplo do JSON em `EXCAMBIA_OAUTH_CLIENTS`:
 
-Crie o vínculo individual em `mcp_identities` com o `sub` e o identificador do cliente do token de acesso. Mantenha o login do portal disponível para aprovar e identificar a conta da Excambia que receberá esse vínculo. Valide a emissão do token e o acesso de ponta a ponta conforme a seção anterior.
+```json
+[
+  {"client_id":"excambia-mcp-piloto","client_name":"Assistente piloto","redirect_uris":["https://cliente.exemplo.com/callback"],"resource":"mcp"},
+  {"client_id":"excambia-rest-piloto","client_name":"Aplicativo piloto","redirect_uris":["https://app.exemplo.com/callback"],"resource":"rest"}
+]
+```
+
+Nos clientes de terceiros, use Authorization Code com PKCE S256. Para o ChatGPT, habilite CIMD e confirme que o painel do conector mostra `https://chatgpt.com/oauth/client.json` e a URL de retorno estável `https://chatgpt.com/connector_platform_oauth_redirect`. A Excambia aceita metadados e chaves apenas desses endereços oficiais. Confira o [fluxo do ChatGPT](https://developers.openai.com/plugins/build/auth). Solicite pelo menos um escopo da tabela acima. O usuário faz login com a conta aprovada da Excambia e autoriza o aplicativo. A aprovação e os dados temporários do OAuth ficam no MySQL. Os tokens expiram em uma hora. Clientes que solicitam e recebem `offline_access` com `prompt=consent` podem renovar o token. A renovação usa rotação, com até 24 horas de validade por token e consentimento válido por sete dias. Revogar a sessão do portal invalida o acesso e a renovação.
+
+1. Revise as permissões e habilite `MCP_AUTHORIZATION_REVIEWED` e as interfaces a testar (`MCP_ENABLED` e/ou `INTEGRATION_API_ENABLED`).
+2. Teste com um cliente OAuth real. Confira a descoberta, o consentimento, a abertura da cotação na fila, a leitura do protocolo e a repetição idempotente.
+3. Verifique se o token é rejeitado na outra interface, em outro ambiente e após a revogação da sessão. Confirme que a conta só consulta os próprios registros.
+
+Para desativar uma interface, volte a variável correspondente para `false` e recarregue o serviço da aplicação.
+
+As instalações que já usam um emissor externo podem manter `EXCAMBIA_OAUTH_ENABLED=false` e configurar `MCP_OAUTH_ISSUER`, `MCP_JWKS_URL` e os vínculos em `mcp_identities`.
+
+A manutenção do MySQL pode remover registros OAuth já expirados em lotes pelo índice de `expiresAt`. Uma consulta de limpeza é `DELETE FROM excambia_oauth_records WHERE expiresAt < UNIX_TIMESTAMP() LIMIT 1000`.

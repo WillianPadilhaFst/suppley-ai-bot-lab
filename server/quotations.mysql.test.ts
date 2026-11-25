@@ -103,6 +103,24 @@ describe.skipIf(!enabled)("Quotations with isolated MySQL 8.4", () => {
     await database.execute("TRUNCATE TABLE quotations");
   });
 
+  it.skipIf(!migrationMode)("stores OAuth records and consumes an authorization code only once", async () => {
+    const { MysqlOAuthAdapter } = await import("./oauth/adapter");
+    const codes = new MysqlOAuthAdapter("AuthorizationCode");
+    const grant = randomUUID();
+    const code = randomUUID();
+    const uid = randomUUID();
+    await codes.upsert(code, { grantId: grant, uid }, 60);
+    expect(await codes.findByUid(uid)).toMatchObject({ grantId: grant });
+    const results = await Promise.allSettled([codes.consume(code), codes.consume(code)]);
+    expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
+    expect(await codes.find(code)).toMatchObject({ consumed: expect.any(Number) });
+    await codes.revokeByGrantId(grant);
+    expect(await codes.find(code)).toBeUndefined();
+    await codes.upsert(code, { grantId: grant }, 0);
+    expect(await codes.find(code)).toBeUndefined();
+    await codes.destroy(code);
+  });
+
   it.skipIf(!migrationMode)("matches all current application tables and columns after migration", async () => {
     const { is } = await import("drizzle-orm");
     const { MySqlTable, getTableConfig } = await import("drizzle-orm/mysql-core");

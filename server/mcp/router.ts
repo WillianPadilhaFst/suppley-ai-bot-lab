@@ -1,3 +1,4 @@
+import { getOAuthIssuer } from "../oauth/config";
 import { Router } from "express";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -189,7 +190,7 @@ mcpRouter.get("/.well-known/oauth-protected-resource/mcp", (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
   return res.json({
     resource: process.env.MCP_RESOURCE_URL,
-    authorization_servers: [process.env.MCP_OAUTH_ISSUER],
+    authorization_servers: [getOAuthIssuer()],
     scopes_supported: integrationScopes,
     bearer_methods_supported: ["header"],
   });

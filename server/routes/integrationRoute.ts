@@ -1,3 +1,4 @@
+import { getOAuthIssuer } from "../oauth/config";
 import {
   Router,
   json,
@@ -75,7 +76,7 @@ apiDiscoveryRouter.get(metadataPath, (_req, res) => {
   if (!enabled() || !resource) return res.sendStatus(404);
   return res.json({
     resource: resource.href,
-    authorization_servers: [process.env.MCP_OAUTH_ISSUER],
+    authorization_servers: [getOAuthIssuer()],
     bearer_methods_supported: ["header"],
     scopes_supported: integrationScopes,
   });

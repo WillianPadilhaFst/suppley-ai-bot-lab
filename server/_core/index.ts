@@ -1,3 +1,5 @@
+import { readLocalOAuthConfig } from "../oauth/config";
+import { createOAuthRouter } from "../oauth/router";
 import { mcpRouter } from "../mcp/router";
 import { apiDiscoveryRouter, integrationRouter } from "../routes/integrationRoute";
 import { consumeLimit } from "../security/abuse";
@@ -51,6 +53,8 @@ async function startServer() {
       next();
     } catch {res.sendStatus(429);}
   });
+  const oauth = readLocalOAuthConfig();
+  if (oauth) app.use(createOAuthRouter(oauth));
   app.use(apiDiscoveryRouter);
   app.use("/api/v1", integrationRouter);
   app.use("/mcp", express.json({ limit: "64kb" }));
