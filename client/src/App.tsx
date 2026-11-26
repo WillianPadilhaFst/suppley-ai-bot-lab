@@ -17,6 +17,7 @@ import Login from "./pages/Login";
 const Register = lazy(() => import("./pages/Register"));
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const LandingExcambia = lazy(() => import("./pages/LandingExcambia"));
+const Landing = lazy(() => import("./pages/Landing"));
 
 // Dashboard Pages — code-splitting por rota: cada página vira um chunk próprio,
 // e o renderizador pesado (markdown/shiki/mermaid/katex) só baixa onde é usado.
@@ -119,6 +120,7 @@ function Router() {
     <Switch>
       {/* Public presentation & auth routes */}
       <Route path="/apresentacao" component={LandingExcambia} />
+      <Route path="/landing" component={Landing} />
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
       <Route path="/forgot-password" component={ForgotPassword} />

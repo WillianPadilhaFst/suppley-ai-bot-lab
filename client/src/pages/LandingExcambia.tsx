@@ -53,6 +53,7 @@ import {
 } from "@/components/excambia/LandingInteractiveModules";
 import { EASE_EDITORIAL, SPRING_GENTLE } from "@/lib/motion";
 import { useAuth } from "@/_core/hooks/useAuth";
+import McpApiIntegrationSection from "@/components/landing/McpApiIntegrationSection";
 
 const HERO_CYCLING_PHRASES = [
   "na Excambia.",
@@ -122,6 +123,10 @@ const FAQ_ITEMS = [
   {
     q: "Como obtenho meu login de acesso corporativo?",
     a: "Para garantir sigilo comercial absoluto para cada empresa, o login é liberado pela equipe SUPPLEY. Clique em 'Solicitar acesso', envie seus dados (ou traga sua simulação pronta) e provisionaremos suas credenciais.",
+  },
+  {
+    q: "Posso conectar a SUPPLEY e a Excambia à IA própria ou ao ERP da minha empresa?",
+    a: "Sim. Disponibilizamos servidor MCP oficial (Model Context Protocol) para conectar agentes de IA corporativos (Claude, ChatGPT, Gemini ou agentes internos) e REST API + Webhooks para integrar ERPs como SAP, TOTVS, Omie, Sankhya ou sistemas próprios.",
   },
   {
     q: "Minha empresa precisa já importar para usar o serviço?",
@@ -208,6 +213,15 @@ export default function LandingExcambia() {
                 className="transition-colors hover:text-[#28E7C5]"
               >
                 Comparativo
+              </a>
+              <a
+                href="#integracoes"
+                className="inline-flex items-center gap-1.5 transition-colors hover:text-[#28E7C5]"
+              >
+                <span>MCP &amp; API</span>
+                <span className="rounded-full bg-[#28E7C5]/20 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-[#28E7C5]">
+                  IA
+                </span>
               </a>
               <a
                 href="#duvidas"
@@ -560,15 +574,22 @@ export default function LandingExcambia() {
           </section>
 
           {/* =================================================================
-              SECTION 05: ANIMATED METRICS STRIP + SPRING FAQ ACCORDION
+              SECTION 05: MCP & API INTERCONNECTED INFRASTRUCTURE
+             ================================================================= */}
+          <McpApiIntegrationSection
+            onRequestIntegration={() => handleOpenAccess("Integração MCP & API")}
+          />
+
+          {/* =================================================================
+              SECTION 06: ANIMATED METRICS STRIP + SPRING FAQ ACCORDION
              ================================================================= */}
           <section
             id="duvidas"
-            className="border-t border-[#E7E4DC] bg-[#FAF9F6] py-20 sm:py-28"
+            className="border-t border-[#E7E4DC] bg-white py-20 sm:py-28"
           >
             <div className="mx-auto max-w-7xl px-4 sm:px-6 space-y-16">
               <Reveal>
-                <div className="grid grid-cols-2 gap-6 rounded-3xl border border-[#E7E4DC] bg-white p-7 shadow-sm sm:grid-cols-4 sm:p-9">
+                <div className="grid grid-cols-2 gap-6 rounded-3xl border border-[#E7E4DC] bg-[#FAF9F6] p-7 shadow-sm sm:grid-cols-4 sm:p-9">
                   <div>
                     <div className="font-mono text-3xl font-bold text-[#682ABA] sm:text-4xl">
                       <AnimatedNumber value={10515} />
@@ -608,7 +629,7 @@ export default function LandingExcambia() {
               <div className="mx-auto max-w-3xl">
                 <Reveal className="text-center space-y-2 pb-8">
                   <div className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-[#682ABA]">
-                    05 / DÚVIDAS FREQUENTES
+                    06 / DÚVIDAS FREQUENTES
                   </div>
                   <h2 className="text-3xl font-bold tracking-[-0.03em] text-[#1B1523]">
                     Perguntas sobre o serviço e o acesso
@@ -745,6 +766,12 @@ export default function LandingExcambia() {
               <a href="#jornada" className="hover:text-[#1B1523]">
                 Como Funciona
               </a>
+              <a href="#integracoes" className="hover:text-[#1B1523]">
+                MCP &amp; API
+              </a>
+              <Link href="/landing" className="hover:text-[#1B1523]">
+                Visão 30 Marcos
+              </Link>
               <button
                 type="button"
                 onClick={() => handleOpenAccess()}
