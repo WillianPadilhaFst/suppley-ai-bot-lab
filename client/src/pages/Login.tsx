@@ -117,6 +117,12 @@ export default function Login() {
             <p className="text-xs text-muted-foreground text-center">
               O acesso é criado pelo administrador. Solicite suas credenciais ao administrador do sistema.
             </p>
+            <Link
+              href="/apresentacao"
+              className="text-xs font-medium text-primary hover:underline text-center"
+            >
+              ← Conheça a SUPPLEY, Excambia &amp; integrações MCP/API
+            </Link>
           </CardFooter>
         </form>
       </Card>
