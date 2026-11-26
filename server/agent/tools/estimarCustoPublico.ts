@@ -10,7 +10,7 @@ import { getStateIcmsInternalRate } from "../../services/statePricingService";
 import { defineSchema, type AgentTool } from "./types";
 
 const amount = z.number().finite().positive().max(1_000_000_000);
-const inputSchema = z
+export const importEstimateInput = z
   .object({
     produto: z.string().trim().min(1).max(255),
     ncm: z.string().regex(/^\d{8}$/),
@@ -77,7 +77,7 @@ export const estimarCustoPublicoTool: AgentTool = {
     },
   ),
   async run(args) {
-    const input = inputSchema.parse(args);
+    const input = importEstimateInput.parse(args);
     let referencia;
     try {
       referencia = await consultarComexPorNcm({ ncm: input.ncm });

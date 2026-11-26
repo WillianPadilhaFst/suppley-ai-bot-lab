@@ -4,6 +4,7 @@ import {
   listOwnOperations,
   getOwnOperation,
   createOwnOperation,
+  publicOperationInput,
 } from "../services/publicOperations";
 export const portalRouter = router({
   list: protectedProcedure.query(({ ctx }) => listOwnOperations(ctx.user)),
@@ -11,6 +12,6 @@ export const portalRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .query(({ ctx, input }) => getOwnOperation(ctx.user, input.id)),
   create: protectedProcedure
-    .input(z.object({ titulo: z.string().trim().min(1).max(255) }))
+    .input(publicOperationInput)
     .mutation(({ ctx, input }) => createOwnOperation(ctx.user, input.titulo)),
 });

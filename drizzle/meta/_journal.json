@@ -393,6 +393,13 @@
       "when": 1765807958474,
       "tag": "0052_restore_missing_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "5",
+      "when": 1765807958475,
+      "tag": "0053_excambia_oauth",
+      "breakpoints": true
     }
   ]
 }

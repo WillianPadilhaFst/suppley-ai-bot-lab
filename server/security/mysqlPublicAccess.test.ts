@@ -155,6 +155,40 @@ describe.skipIf(!url)("MySQL migration and owner isolation", () => {
       expect((await svc.listOwnQuoteRequests(b)).map((v) => v.produto)).toEqual(
         ["Produto do cliente B"],
       );
+      const [integration, retry] = await Promise.all([
+        svc.submitIntegrationQuoteRequest(a, input, "retry-key"),
+        svc.submitIntegrationQuoteRequest(a, input, "retry-key"),
+      ]);
+      expect(retry.id).toBe(integration.id);
+      expect(integration.id).not.toBe(first.id);
+      const other = await svc.submitIntegrationQuoteRequest(
+        b,
+        input,
+        "retry-key",
+      );
+      expect(other.id).not.toBe(integration.id);
+      await expect(
+        svc.getOwnQuoteRequest(b, integration.id),
+      ).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+      await expect(
+        svc.submitIntegrationQuoteRequest(
+          a,
+          { ...input, quantidade: "3000" },
+          "retry-key",
+        ),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
+      expect(await svc.getOwnQuoteRequest(a, integration.id)).toEqual(
+        integration,
+      );
+      expect(await svc.listQuoteInbox(admin)).toContainEqual(
+        expect.objectContaining({
+          id: integration.id,
+          userId: a.id,
+          conversaId: null,
+        }),
+      );
       expect(first).not.toHaveProperty("requestKey");
       expect(first).not.toHaveProperty("userId");
       await expect(svc.listQuoteInbox(a)).rejects.toMatchObject({
@@ -167,7 +201,7 @@ describe.skipIf(!url)("MySQL migration and owner isolation", () => {
         svc.linkQuoteOperation(admin, first.id, 900004),
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
       await svc.linkQuoteOperation(admin, first.id, 900003);
-      expect((await svc.listOwnQuoteRequests(a))[0]).toMatchObject({
+      expect(await svc.getOwnQuoteRequest(a, first.id)).toMatchObject({
         operacaoId: 900003,
         status: "vinculada",
       });
@@ -190,7 +224,9 @@ describe.skipIf(!url)("MySQL migration and owner isolation", () => {
         getOwnOperation(a, started.operacaoId),
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
       await svc.reviewQuoteRequest(admin, first.id, "em_analise");
-      expect((await svc.listOwnQuoteRequests(a))[0].status).toBe("em_analise");
+      expect((await svc.getOwnQuoteRequest(a, first.id)).status).toBe(
+        "em_analise",
+      );
     } finally {
       await conn.query(
         "DELETE FROM public_quote_requests WHERE userId IN (900003,900004)",

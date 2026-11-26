@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, bigint, json, decimal, double, index, unique } from "drizzle-orm/mysql-core";
+import { char, int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, bigint, json, decimal, double, index, unique } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -2090,3 +2090,19 @@ export const publicQuoteRequests = mysqlTable('public_quote_requests', {
   criadaEm: timestamp('criadaEm').defaultNow().notNull(),
   atualizadaEm: timestamp('atualizadaEm').defaultNow().onUpdateNow().notNull(),
 }, t=>({byUser:index('idx_public_quote_user').on(t.userId,t.criadaEm),requestKey:unique('uq_public_quote_request').on(t.userId,t.requestKey)}));
+
+export const excambiaOauthRecords = mysqlTable("excambia_oauth_records", {
+  id: char("id", { length: 64 }).primaryKey(),
+  model: varchar("model", { length: 40 }).notNull(),
+  payload: json("payload").notNull(),
+  uid: char("uid", { length: 64 }),
+  userCode: char("userCode", { length: 64 }),
+  grantId: char("grantId", { length: 64 }),
+  expiresAt: int("expiresAt", { unsigned: true }),
+  consumedAt: int("consumedAt", { unsigned: true }),
+}, t => ({
+  byUid: index("idx_excambia_oauth_uid").on(t.uid),
+  byUserCode: index("idx_excambia_oauth_user_code").on(t.userCode),
+  byGrant: index("idx_excambia_oauth_grant").on(t.grantId),
+  byExpiry: index("idx_excambia_oauth_expires").on(t.expiresAt),
+}));
